@@ -1,0 +1,206 @@
+<mxfile host="app.diagrams.net" modified="2026-04-01T00:00:00.000Z" agent="Claude" version="21.0.0">
+  <diagram id="wildfire-platform" name="Wildfire Modeling Platform Architecture">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="&lt;b&gt;WILDFIRE MODELING PLATFORM — SERVICE ARCHITECTURE&lt;/b&gt;&lt;br&gt;Cell2Fire Engine with Modular Data Pipelines" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontColor=#FF6B35;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="600" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== LAYER 1: USER INPUT ==================== -->
+        <mxCell id="layer1_label" value="USER INPUT" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#888888;fontStyle=1;letterSpacing=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="120" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="shapefile" value="&lt;b&gt;Shapefile Ingestion Service&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Accepts user AOI shapefile&lt;br&gt;Validates geometry &amp; reprojects to EPSG:5070&lt;br&gt;Computes bounding box for tile fetches&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;strokeWidth=2;fontSize=12;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="480" y="100" width="440" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== LAYER 2: DATA PIPELINES ==================== -->
+        <mxCell id="layer2_label" value="DATA PIPELINES" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#888888;fontStyle=1;letterSpacing=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="210" width="140" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- Fuel Pipeline -->
+        <mxCell id="fuel" value="&lt;b&gt;Fuel Pipeline&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;LANDFIRE FBFM40 (30m)&lt;br&gt;Scott &amp; Burgan fuel models&lt;br&gt;Clip, resample, assign codes&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;fontSize=11;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="240" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Topography Pipeline -->
+        <mxCell id="topo" value="&lt;b&gt;Topography Pipeline&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;USGS 3DEP DEM (10m/30m)&lt;br&gt;Derives slope, aspect, elevation&lt;br&gt;Aligns to fuel grid resolution&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;strokeWidth=2;fontSize=11;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="320" y="240" width="240" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Weather Pipeline -->
+        <mxCell id="weather" value="&lt;b&gt;Weather Pipeline&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;RAWS / NOAA RTMA / HRRR / gridMET&lt;br&gt;Wind speed &amp; dir, temp, RH&lt;br&gt;Historical distributions + real-time&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE4EC;strokeColor=#AD1457;strokeWidth=2;fontSize=11;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="600" y="240" width="260" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Fuel Moisture Pipeline -->
+        <mxCell id="moisture" value="&lt;b&gt;Fuel Moisture Pipeline&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Dead fuel: Nelson model (from weather)&lt;br&gt;Live fuel: NFMD + MODIS NDVI&lt;br&gt;1hr, 10hr, 100hr classes&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F57F17;strokeWidth=2;fontSize=11;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="900" y="240" width="240" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Assets Pipeline -->
+        <mxCell id="assets" value="&lt;b&gt;Assets &amp; Exposure Pipeline&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;MS Building Footprints / OSM&lt;br&gt;Census TIGER / HIFLD&lt;br&gt;Property values / critical infrastructure&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;strokeWidth=2;fontSize=11;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="240" width="240" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== LAYER 3: GRID ASSEMBLY ==================== -->
+        <mxCell id="layer3_label" value="ASSEMBLY &amp; IGNITION" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#888888;fontStyle=1;letterSpacing=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="370" width="170" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="grid" value="&lt;b&gt;Grid Assembly Service&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Merges all pipeline outputs into unified Cell2Fire grid&lt;br&gt;Each cell: fuel model + slope + aspect + elevation + moisture&lt;br&gt;Validates layer consistency &amp; alignment&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#4527A0;strokeWidth=2;fontSize=12;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="200" y="400" width="500" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ignition" value="&lt;b&gt;Ignition Service&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;User-defined points (scenario)&lt;br&gt;Probabilistic sampling (FPA FOD)&lt;br&gt;Weighted by fuel/weather&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;strokeWidth=2;fontSize=12;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="760" y="400" width="280" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== LAYER 4: SIMULATION ENGINE ==================== -->
+        <mxCell id="layer4_label" value="SIMULATION ENGINE" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#888888;fontStyle=1;letterSpacing=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="520" width="160" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="cell2fire" value="&lt;b style=&quot;font-size:16px;&quot;&gt;Cell2Fire Simulation Engine&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Rothermel-based fire spread on cellular automata grid&lt;br&gt;Single deterministic runs OR Monte Carlo batches (100–10,000 scenarios)&lt;br&gt;Outputs: fire perimeters, rate of spread, intensity per cell per timestep&lt;br&gt;Parallelized C++ core for performance&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBE9E7;strokeColor=#FF6B35;strokeWidth=3;fontSize=12;verticalAlign=middle;arcSize=10;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="550" width="640" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== LAYER 5: OUTPUT ==================== -->
+        <mxCell id="layer5_label" value="ANALYSIS &amp; OUTPUT" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#888888;fontStyle=1;letterSpacing=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="690" width="160" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="consequence" value="&lt;b&gt;Consequence Analysis&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Overlay fire spread with assets layer&lt;br&gt;Structures exposed, population at risk, estimated $ damage&lt;br&gt;Aggregate across Monte Carlo for probabilistic risk&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#B71C1C;strokeWidth=2;fontSize=12;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="200" y="720" width="400" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="output" value="&lt;b&gt;Output &amp; Reporting Service&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Burn probability maps, risk heatmaps&lt;br&gt;Evacuation trigger zones, structure exposure reports&lt;br&gt;Export: GeoJSON, GeoTIFF, Shapefile, PDF&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#1B5E20;strokeWidth=2;fontSize=12;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="660" y="720" width="400" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== CONNECTIONS ==================== -->
+        <!-- Shapefile to pipelines -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#E65100;strokeWidth=1.5;exitX=0.15;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="shapefile" target="fuel" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#E65100;strokeWidth=1.5;exitX=0.35;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="shapefile" target="topo" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#E65100;strokeWidth=1.5;exitX=0.6;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="shapefile" target="weather" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#E65100;strokeWidth=1.5;exitX=0.85;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="shapefile" target="assets" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Weather to moisture -->
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#AD1457;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;dashed=1;" edge="1" source="weather" target="moisture" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4_label" value="&lt;font size=&quot;1&quot; color=&quot;#AD1457&quot;&gt;derived inputs&lt;/font&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="e4">
+          <mxGeometry x="-0.1" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Pipelines to Grid Assembly -->
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2E7D32;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.15;entryY=0;entryDx=0;entryDy=0;" edge="1" source="fuel" target="grid" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#1565C0;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.38;entryY=0;entryDx=0;entryDy=0;" edge="1" source="topo" target="grid" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#AD1457;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.62;entryY=0;entryDx=0;entryDy=0;" edge="1" source="weather" target="grid" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#F57F17;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.85;entryY=0;entryDx=0;entryDy=0;" edge="1" source="moisture" target="grid" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Grid + Ignition to Cell2Fire -->
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#4527A0;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" source="grid" target="cell2fire" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#7B1FA2;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.7;entryY=0;entryDx=0;entryDy=0;" edge="1" source="ignition" target="cell2fire" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Cell2Fire to outputs -->
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FF6B35;strokeWidth=2;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="cell2fire" target="consequence" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FF6B35;strokeWidth=2;exitX=0.7;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="cell2fire" target="output" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Assets to Consequence -->
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#C62828;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;dashed=1;" edge="1" source="assets" target="consequence" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1300" y="700"/>
+              <mxPoint x="520" y="700"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13_label" value="&lt;font size=&quot;1&quot; color=&quot;#C62828&quot;&gt;exposure overlay&lt;/font&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="e13">
+          <mxGeometry x="-0.1" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Consequence to Output -->
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#B71C1C;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="consequence" target="output" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== DATA SOURCES (external) ==================== -->
+        <mxCell id="ds_label" value="PUBLIC DATA SOURCES" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#888888;fontStyle=1;letterSpacing=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="870" width="180" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ds1" value="LANDFIRE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=1;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="100" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="ds2" value="USGS 3DEP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=1;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="900" width="100" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="ds3" value="NOAA / RAWS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=1;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="900" width="100" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="ds4" value="NFMD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=1;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="900" width="100" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="ds5" value="MS Buildings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=1;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="900" width="100" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="ds6" value="Census TIGER" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=1;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="900" width="100" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="ds7" value="HIFLD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=1;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="900" width="100" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="ds8" value="FPA FOD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=1;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="880" y="900" width="100" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="ds9" value="MODIS / VIIRS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=1;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="900" width="100" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="ds10" value="gridMET" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=1;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="900" width="100" height="35" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== TECH STACK BOX ==================== -->
+        <mxCell id="techstack" value="&lt;b&gt;TECH STACK&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Orchestration: Airflow/Prefect | Compute: K8s + spot | Storage: PostGIS + S3&lt;br&gt;Geo: GDAL, Rasterio, GeoPandas | Sim: Cell2Fire C++ | API: FastAPI + Celery&lt;br&gt;Queue: Redis/RabbitMQ | Viz: Mapbox GL / Deck.gl | Export: GeoTIFF, GeoJSON, PDF&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#212121;strokeColor=#FF6B35;strokeWidth=2;fontSize=11;fontColor=#FFFFFF;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="960" width="1180" height="70" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

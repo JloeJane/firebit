@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker build:*)",
+      "Skill(update-config)",
+      "Bash(python3:*)",
+      "WebFetch(domain:cell2fire.readthedocs.io)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(docker run:*)",
+      "Bash(curl -s http://localhost:8001/)",
+      "Bash(curl -s http://localhost:8001/api/summary)",
+      "Bash(make all:*)",
+      "Bash(tee /tmp/full_pipeline.log)",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(make test:*)"
+    ]
+  }
+}

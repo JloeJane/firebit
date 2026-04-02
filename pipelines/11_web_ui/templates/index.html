@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wildfire Platform — Townsend AOI</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 300px;
+      flex-shrink: 0;
+      background: #16213e;
+      border-right: 1px solid #0f3460;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    #sidebar h1 {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #e94560;
+      padding: 18px 16px 10px;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .section {
+      padding: 14px 16px;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .section h2 {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #888;
+      margin-bottom: 10px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+
+    .stat-label { font-size: 0.82rem; color: #aaa; }
+    .stat-value { font-size: 0.95rem; font-weight: 600; color: #e0e0e0; }
+    .stat-value.highlight { color: #e94560; }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+      font-size: 0.82rem;
+      color: #aaa;
+    }
+
+    .swatch {
+      width: 16px; height: 16px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+
+    .swatch-circle {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+    }
+
+    .status-dot.loaded { background: #4caf50; }
+    .status-dot.missing { background: #e94560; }
+
+    #loading {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #16213e;
+      color: #aaa;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      pointer-events: none;
+      z-index: 1000;
+      display: none;
+    }
+
+    /* ── Map ── */
+    #map {
+      flex: 1;
+      background: #1a1a2e;
+    }
+
+    /* Override Leaflet controls for dark theme */
+    .leaflet-control-layers,
+    .leaflet-control-zoom a,
+    .leaflet-control-attribution {
+      background: #16213e !important;
+      color: #aaa !important;
+      border-color: #0f3460 !important;
+    }
+
+    .leaflet-control-layers-base label,
+    .leaflet-control-layers-overlays label {
+      color: #ccc;
+    }
+
+    .leaflet-control-attribution a { color: #888 !important; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>🔥 Wildfire Platform</h1>
+
+  <div class="section">
+    <h2>Simulation Summary</h2>
+    <div class="stat-row">
+      <span class="stat-label">Area burned</span>
+      <span class="stat-value highlight" id="s-area">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Area (acres)</span>
+      <span class="stat-value" id="s-acres">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Structures exposed</span>
+      <span class="stat-value highlight" id="s-structures">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Population at risk</span>
+      <span class="stat-value" id="s-population">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Roads exposed</span>
+      <span class="stat-value" id="s-roads">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Time to 1st structure</span>
+      <span class="stat-value" id="s-arrival">—</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Map Layers</h2>
+    <div class="legend-item">
+      <div class="swatch" style="background:transparent;border:2px dashed #4fc3f7;"></div>
+      AOI boundary
+    </div>
+    <div class="legend-item">
+      <div class="swatch" style="background:#e94560;opacity:0.6;"></div>
+      Fire perimeter
+    </div>
+    <div class="legend-item">
+      <div class="swatch-circle" style="background:#aaa;"></div>
+      All buildings
+    </div>
+    <div class="legend-item">
+      <div class="swatch-circle" style="background:#ff6b35;"></div>
+      Exposed buildings
+    </div>
+    <div class="legend-item">
+      <div class="swatch-circle" style="background:#e94560;border:2px solid #fff;"></div>
+      Ignition point
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Data Status</h2>
+    <div class="legend-item"><div class="status-dot" id="dot-aoi"></div> AOI boundary</div>
+    <div class="legend-item"><div class="status-dot" id="dot-perimeter"></div> Fire perimeter</div>
+    <div class="legend-item"><div class="status-dot" id="dot-buildings"></div> Buildings</div>
+    <div class="legend-item"><div class="status-dot" id="dot-exposed"></div> Exposed buildings</div>
+    <div class="legend-item"><div class="status-dot" id="dot-ignition"></div> Ignition point</div>
+  </div>
+
+  <div class="section" style="font-size:0.72rem;color:#555;line-height:1.6;">
+    AOI: Tuckaleechee Cove / Townsend, TN<br>
+    Fuel: LANDFIRE FBFM40 (EPSG:5070)<br>
+    Sim: Cell2Fire C2F-W S&amp;B mode
+  </div>
+</div>
+
+<div id="map"></div>
+<div id="loading">Loading layers…</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Map init — dark CartoDB basemap
+// ---------------------------------------------------------------------------
+const map = L.map('map', { zoomControl: true });
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+  maxZoom: 19,
+}).addTo(map);
+
+// Default view: Townsend area
+map.setView([35.585, -83.765], 12);
+
+// ---------------------------------------------------------------------------
+// Layer groups (for control)
+// ---------------------------------------------------------------------------
+const layers = {
+  aoi:      L.featureGroup(),
+  perimeter: L.featureGroup(),
+  buildings: L.featureGroup(),
+  exposed:  L.featureGroup(),
+  ignition: L.featureGroup(),
+};
+
+Object.values(layers).forEach(lg => lg.addTo(map));
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function setDot(id, ok) {
+  const el = document.getElementById(id);
+  if (el) el.className = 'status-dot ' + (ok ? 'loaded' : 'missing');
+}
+
+function hasFeatures(fc) {
+  return fc && fc.features && fc.features.length > 0;
+}
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + ' → ' + r.status);
+  return r.json();
+}
+
+// ---------------------------------------------------------------------------
+// Load all layers in parallel
+// ---------------------------------------------------------------------------
+const loading = document.getElementById('loading');
+loading.style.display = 'block';
+
+Promise.all([
+  fetchJSON('/api/aoi'),
+  fetchJSON('/api/fire-perimeter'),
+  fetchJSON('/api/buildings/all'),
+  fetchJSON('/api/buildings/exposed'),
+  fetchJSON('/api/ignition'),
+  fetchJSON('/api/summary'),
+]).then(([aoi, perimeter, allBldgs, exposedBldgs, ignition, summary]) => {
+
+  // ── AOI ──
+  if (hasFeatures(aoi)) {
+    L.geoJSON(aoi, {
+      style: { color: '#4fc3f7', weight: 2, dashArray: '6 4', fillOpacity: 0, opacity: 0.9 }
+    }).addTo(layers.aoi);
+    map.fitBounds(layers.aoi.getBounds(), { padding: [20, 20] });
+    setDot('dot-aoi', true);
+  } else {
+    setDot('dot-aoi', false);
+  }
+
+  // ── Fire perimeter ──
+  if (hasFeatures(perimeter)) {
+    L.geoJSON(perimeter, {
+      style: { color: '#e94560', weight: 2, fillColor: '#e94560', fillOpacity: 0.4 }
+    }).addTo(layers.perimeter);
+    setDot('dot-perimeter', true);
+  } else {
+    setDot('dot-perimeter', false);
+  }
+
+  // ── All buildings ──
+  if (hasFeatures(allBldgs)) {
+    L.geoJSON(allBldgs, {
+      pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+        radius: 4, color: '#aaa', weight: 1, fillColor: '#888', fillOpacity: 0.7,
+      }),
+      style: { color: '#aaa', weight: 1, fillColor: '#888', fillOpacity: 0.5 },
+    }).addTo(layers.buildings);
+    setDot('dot-buildings', true);
+  } else {
+    setDot('dot-buildings', false);
+  }
+
+  // ── Exposed buildings ──
+  if (hasFeatures(exposedBldgs)) {
+    L.geoJSON(exposedBldgs, {
+      pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+        radius: 7, color: '#ff6b35', weight: 2, fillColor: '#ff6b35', fillOpacity: 0.9,
+      }),
+      style: { color: '#ff6b35', weight: 2, fillColor: '#ff6b35', fillOpacity: 0.8 },
+      onEachFeature: (f, layer) => {
+        layer.bindPopup('<b>Exposed Building</b>');
+      },
+    }).addTo(layers.exposed);
+    setDot('dot-exposed', true);
+  } else {
+    setDot('dot-exposed', false);
+  }
+
+  // ── Ignition point ──
+  if (hasFeatures(ignition)) {
+    ignition.features.forEach(f => {
+      const [lon, lat] = f.geometry.coordinates;
+      L.circleMarker([lat, lon], {
+        radius: 9, color: '#fff', weight: 2, fillColor: '#e94560', fillOpacity: 1,
+      })
+        .bindPopup('<b>Ignition Point</b><br>Cell ID: ' + (f.properties.cell_id || '—'))
+        .addTo(layers.ignition);
+    });
+    setDot('dot-ignition', true);
+  } else {
+    setDot('dot-ignition', false);
+  }
+
+  // ── Summary stats ──
+  if (summary && summary.total_area_burned_ha !== undefined) {
+    document.getElementById('s-area').textContent =
+      summary.total_area_burned_ha.toFixed(1) + ' ha';
+    document.getElementById('s-acres').textContent =
+      (summary.total_area_burned_acres || (summary.total_area_burned_ha * 2.47).toFixed(1)) + ' ac';
+    document.getElementById('s-structures').textContent =
+      summary.structures_exposed ?? '—';
+    document.getElementById('s-population').textContent =
+      summary.estimated_population_at_risk ?? '—';
+    const roads = summary.infrastructure_exposed?.road_segments ?? '—';
+    document.getElementById('s-roads').textContent = roads;
+    const arr = summary.fire_arrival_to_first_structure_hrs;
+    document.getElementById('s-arrival').textContent = arr != null ? arr + ' hrs' : 'N/A';
+  }
+
+  // ── Layer control ──
+  L.control.layers(null, {
+    'AOI boundary':        layers.aoi,
+    'Fire perimeter':      layers.perimeter,
+    'All buildings':       layers.buildings,
+    'Exposed buildings':   layers.exposed,
+    'Ignition point':      layers.ignition,
+  }, { collapsed: false, position: 'topright' }).addTo(map);
+
+}).catch(err => {
+  console.error('Layer load error:', err);
+}).finally(() => {
+  loading.style.display = 'none';
+});
+</script>
+</body>
+</html>
