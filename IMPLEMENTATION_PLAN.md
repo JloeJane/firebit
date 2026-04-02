@@ -669,38 +669,89 @@ The weather format must match Cell2Fire's expected input: CSV with columns `Inst
 
 ## Implementation Order & Milestones
 
-### Phase 1: Foundation (Estimated: 2-3 days)
-- [ ] Create repo structure and Makefile
-- [ ] Implement Step 1 (Shapefile Ingestion) — generate Townsend test AOI
-- [ ] Implement Step 3 (Topography) — simplest real data fetch
-- [ ] Verify Docker build/run cycle works end-to-end
+> **Status as of 2026-04-02: MVP complete.** All phases shipped and passing `make test` (23/23). Repo pushed to GitHub at `JloeJane/firebit`.
 
-### Phase 2: Core Data (Estimated: 3-4 days)
-- [ ] Implement Step 2 (Fuel) — LANDFIRE data fetch and processing
-- [ ] Implement Step 4 (Weather) — synthetic scenario
-- [ ] Implement Step 5 (Fuel Moisture) — derived from weather
-- [ ] Implement Step 7 (Grid Assembly) — merge and validate alignment
-- [ ] Test with a small 100×100 sub-grid before full AOI
+### Phase 1: Foundation ✅
+- [x] Create repo structure and Makefile
+- [x] Implement Step 1 (Shapefile Ingestion) — generates Townsend test AOI programmatically
+- [x] Implement Step 3 (Topography) — fetches USGS 3DEP elevation via National Map API
+- [x] Verify Docker build/run cycle works end-to-end
 
-### Phase 3: Simulation (Estimated: 3-4 days)
-- [ ] Implement Step 9 (Cell2Fire) — build C++ in Docker, test on synthetic grid
-- [ ] Implement Step 8 (Ignition) — set test ignition point
-- [ ] Run first successful simulation on Townsend AOI
-- [ ] Debug grid alignment / fuel model compatibility issues (expect this to take time)
+### Phase 2: Core Data ✅
+- [x] Implement Step 2 (Fuel) — LFPS API with elevation-band synthetic fallback
+- [x] Implement Step 4 (Weather) — synthetic scenario based on Nov 2016 Gatlinburg conditions
+- [x] Implement Step 5 (Fuel Moisture) — Nelson EMC model derived from weather
+- [x] Implement Step 7 (Grid Assembly) — validates alignment, remaps fuel codes, writes ASC grids
+- [x] Synthetic grid test (50×50) used in Step 9 before running full AOI
 
-### Phase 4: Output & Visualization (Estimated: 2-3 days)
-- [ ] Implement Step 6 (Assets) — building footprints and population
-- [ ] Implement Step 10 (Consequence) — overlay and statistics
-- [ ] Implement Step 11 (Web UI) — Leaflet map with all layers
-- [ ] End-to-end run: `make all && make ui`
+### Phase 3: Simulation ✅
+- [x] Implement Step 9 (Cell2Fire) — fire2a/C2F-W fork, S&B mode, `--test` flag for synthetic validation
+- [x] Implement Step 8 (Ignition) — lat/lon → EPSG:5070 → 1-based cell ID, nearest-burnable search
+- [x] Run first successful simulation on Townsend AOI (277 ha burned in 24 h)
+- [x] Debugged fuel code mismatch (pipeline 07 writes sequential codes; pipeline 09 reverse-maps to FBFM40 before invoking C2F-W)
 
-### Phase 5: Polish & Documentation (Estimated: 1-2 days)
-- [ ] Auto-generate README.md in each pipeline directory
-- [ ] Error handling and logging for all pipelines
-- [ ] Test with different ignition points
-- [ ] Document known limitations and next steps
+### Phase 4: Output & Visualization ✅
+- [x] Implement Step 6 (Assets) — OSM Overpass buildings + roads, synthetic fallback
+- [x] Implement Step 10 (Consequence) — spatial overlay, fire arrival time from timestep grids
+- [x] Implement Step 11 (Web UI) — FastAPI + Leaflet dark-theme map, all layers + sidebar
+- [x] End-to-end `make all && make ui` passing
 
-**Total estimated MVP timeline: 11-16 days**
+### Phase 5: Polish & Documentation ✅
+- [x] README.md in each of 11 pipeline directories
+- [x] Top-level README.md with quick start, architecture, troubleshooting
+- [x] `make test` target — 23 automated checks
+- [x] Known limitations documented throughout
+- [x] Repo pushed to GitHub (`JloeJane/firebit`, branch `master`)
+
+**MVP shipped.** Actual time: ~1 session.
+
+---
+
+### What's next (Phase 6 — Post-MVP priorities)
+
+---
+
+#### Phase 6A — UI & Output enhancements (starting now)
+
+These make the platform feel real and usable immediately, without requiring data pipeline changes.
+
+**UI/map layer enhancements (pipeline 11):**
+1. **Satellite base layer** — replace OSM basemap with Esri World Imagery or similar; essential for spatial context
+2. **Fire spread animation** — per-timestep GeoTIFFs already exist in `data/simulation/grids/`; add a time-slider to the Leaflet UI
+3. **Layer toggles** — fuel type, elevation, buildings, and burn extent as independently toggleable overlays
+4. **Click-to-inspect** — click any building to see risk score, estimated dollar value, and time-to-fire-arrival in a popup
+
+**Report & analysis enhancements (pipeline 10 + new):**
+5. **Dollar-value damage estimates** — integrate county assessor property values; attach estimated replacement cost to each exposed building
+6. **CWPP report generation** — auto-generate a Community Wildfire Protection Plan-style PDF from simulation outputs (area burned, structures exposed, arrival times, recommendations)
+
+---
+
+#### Phase 6B — Data realism bundle (implement together)
+
+These four items are tightly coupled — real fuel drives real fire behavior, real weather drives real spread rate, and real moisture ties them together. Multi-scenario UI is the payoff that makes the data realism visible.
+
+1. **Real fuel data** — pre-download Tennessee LANDFIRE tile, cache in `data/fuel/cache/`; eliminate synthetic fallback permanently
+2. **Real weather integration** — replace synthetic scenario with NOAA HRRR via the `herbie` Python package for GRIB2 fetch; RAWS station data as historical fallback
+3. **Live fuel moisture from satellite** — MODIS/VIIRS NDVI integration via the `lfmc` package; spatially varying moisture across AOI
+4. **Multi-scenario comparison UI** — side-by-side Leaflet maps for different wind speed, wind direction, or ignition scenarios
+
+---
+
+#### Later (no fixed order)
+
+- Move ignition closer to town — default ignition doesn't reach structures in 24 h; `IGNITION_LAT=35.60 IGNITION_LON=-83.77` or sample from FPA FOD historical ignition density
+- Census population data — replace 2.3-persons/building proxy with Census block data via TIGERweb API
+- Fire evacuation time modeling — combine fire arrival times with road network analysis
+- Irregular grid (Voronoi) — higher resolution at WUI, coarser in homogeneous forest
+- Orchestration upgrade — Airflow/Prefect for parallel pipeline execution
+
+#### Post-post MVP
+
+- Monte Carlo mode — N simulations with varied weather/ignition → burn probability maps (pipeline 09 already supports `--nsims` flag)
+- Database backend — PostGIS for spatial queries (evaluate need at scale)
+
+See the full roadmap in **Future Enhancements** below.
 
 ---
 
@@ -717,15 +768,26 @@ The weather format must match Cell2Fire's expected input: CSV with columns `Inst
 
 ---
 
-## Future Enhancements (Post-MVP)
+## Future Enhancements
 
-1. **Monte Carlo mode:** Run N simulations with varied weather/ignition → burn probability maps
-2. **Real weather integration:** RAWS/HRRR/gridMET pipelines
-3. **Live fuel moisture from satellite:** MODIS/VIIRS NDVI integration
-4. **Irregular grid (Voronoi):** Higher resolution at WUI, coarser in homogeneous forest
-5. **Orchestration upgrade:** Airflow/Prefect for parallel pipeline execution
-6. **Database backend:** PostGIS for spatial queries, Redis for caching
-7. **Multi-scenario comparison UI:** Side-by-side maps for different wind/ignition scenarios
-8. **CWPP report generation:** Auto-generate Community Wildfire Protection Plan documents from outputs
-9. **Dollar-value damage estimates:** Integrate county assessor property values
-10. **Evacuation time modeling:** Combine fire arrival times with road network analysis
+See Phase 6 above for prioritization. Full list for reference:
+
+| Priority | Enhancement | Notes |
+|----------|-------------|-------|
+| **6A — now** | Satellite base layer | Esri World Imagery or similar |
+| **6A — now** | Fire spread animation | Time-slider over existing per-timestep GeoTIFFs |
+| **6A — now** | Layer toggles | Fuel, elevation, buildings, burn extent |
+| **6A — now** | Click-to-inspect buildings | Popup: dollar value, risk score, arrival time |
+| **6A — now** | Dollar-value damage estimates | County assessor property values |
+| **6A — now** | CWPP report generation | Auto-generated PDF from simulation outputs |
+| **6B — bundle** | Real fuel data | Pre-download TN LANDFIRE tile |
+| **6B — bundle** | Real weather (HRRR/RAWS) | `herbie` package for GRIB2 fetch |
+| **6B — bundle** | Live fuel moisture (MODIS/VIIRS) | `lfmc` package, spatially varying |
+| **6B — bundle** | Multi-scenario comparison UI | Side-by-side maps |
+| **Later** | Move ignition closer to town | Or sample from FPA FOD |
+| **Later** | Census population data | TIGERweb API |
+| **Later** | Evacuation time modeling | Fire arrival time + road network |
+| **Later** | Irregular grid (Voronoi) | Higher WUI resolution |
+| **Later** | Orchestration upgrade | Airflow/Prefect |
+| **Post-post MVP** | Monte Carlo mode | `--nsims` flag already supported |
+| **Post-post MVP** | Database backend | PostGIS — evaluate at scale |
