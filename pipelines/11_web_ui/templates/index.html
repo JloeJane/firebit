@@ -168,7 +168,7 @@
   </div>
 
   <div class="section">
-    <h2>Map Layers</h2>
+    <h2>Legend</h2>
     <div class="legend-item">
       <div class="swatch" style="background:transparent;border:2px dashed #4fc3f7;"></div>
       AOI boundary
@@ -212,14 +212,42 @@
 
 <script>
 // ---------------------------------------------------------------------------
-// Map init — dark CartoDB basemap
+// Map init — base layers
 // ---------------------------------------------------------------------------
 const map = L.map('map', { zoomControl: true });
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
-  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
-  maxZoom: 19,
-}).addTo(map);
+const baseSatellite = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  {
+    attribution: 'Tiles © Esri — Source: Esri, USGS, NOAA',
+    maxZoom: 19,
+  }
+);
+
+const baseDark = L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png',
+  {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+    maxZoom: 19,
+  }
+);
+
+const baseStreet = L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }
+);
+
+// Satellite on by default
+baseSatellite.addTo(map);
+
+const baseLayers = {
+  'Satellite': baseSatellite,
+  'Dark':      baseDark,
+  'Street':    baseStreet,
+};
 
 // Default view: Townsend area
 map.setView([35.585, -83.765], 12);
@@ -352,13 +380,17 @@ Promise.all([
   }
 
   // ── Layer control ──
-  L.control.layers(null, {
-    'AOI boundary':        layers.aoi,
-    'Fire perimeter':      layers.perimeter,
-    'All buildings':       layers.buildings,
-    'Exposed buildings':   layers.exposed,
-    'Ignition point':      layers.ignition,
-  }, { collapsed: false, position: 'topright' }).addTo(map);
+  L.control.layers(
+    baseLayers,
+    {
+      'AOI boundary':      layers.aoi,
+      'Fire perimeter':    layers.perimeter,
+      'All buildings':     layers.buildings,
+      'Exposed buildings': layers.exposed,
+      'Ignition point':    layers.ignition,
+    },
+    { collapsed: false, position: 'topright' }
+  ).addTo(map);
 
 }).catch(err => {
   console.error('Layer load error:', err);

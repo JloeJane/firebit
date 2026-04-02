@@ -165,10 +165,21 @@ Where `xmin/ymin/xmax/ymax` come from `aoi_metadata.json` (`bbox_5070`) and `nco
 
 ## Future roadmap
 
-See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for the full post-MVP roadmap, including:
+See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for full prioritization. Summary:
 
-- Real LANDFIRE and USGS weather (RAWS/HRRR) integration
-- Monte Carlo probabilistic fire spread (N simulations → burn probability maps)
-- Census block population data
-- Fire spread animation in the web UI
-- CWPP-style consequence reports
+**In progress (Phase 6A):**
+- Satellite base layer + layer toggles in the Leaflet UI
+- Fire spread animation (time-slider over existing per-timestep GeoTIFFs)
+- Click-to-inspect buildings (dollar value, risk score, fire arrival time)
+- Dollar-value damage estimates (county assessor data)
+- CWPP-style auto-generated PDF reports
+
+**Next bundle (Phase 6B — implement together):**
+- Real LANDFIRE fuel tile (pre-downloaded, no more synthetic fallback)
+- Real weather via NOAA HRRR / RAWS (`herbie` package)
+- Live fuel moisture from MODIS/VIIRS NDVI
+- Multi-scenario comparison UI (side-by-side maps)
+
+**Later:** Census population, evacuation time modeling, Voronoi grid, orchestration upgrade
+
+**Post-post MVP:** Monte Carlo probabilistic burn maps
