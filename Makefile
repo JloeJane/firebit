@@ -1,4 +1,4 @@
-.PHONY: all clean test build run-01 run-02 run-03 run-04 run-05 run-06 run-07 run-08 run-09 run-10 ui
+.PHONY: all clean test build run-01 run-02 run-03 run-04 run-05 run-06 run-07 run-08 run-09 run-10 ui ui-dev
 
 DOCKER_RUN = docker run --rm --env-file .env -v $(PWD)/data:/data
 
@@ -52,6 +52,17 @@ run-10: build-10_consequence
 ui: build-11_web_ui
 	@echo "=== Launching Web UI on http://localhost:8001 ==="
 	docker run --rm --env-file .env -v $(PWD)/data:/data -p 8001:8000 wildfire-11_web_ui
+
+# Dev mode: src/ and templates/ are live-mounted; uvicorn --reload picks up changes instantly
+ui-dev: build-11_web_ui
+	@echo "=== Launching Web UI (dev/reload) on http://localhost:8001 ==="
+	docker run --rm --env-file .env \
+	  -v $(PWD)/data:/data \
+	  -v $(PWD)/pipelines/11_web_ui/src:/app/src \
+	  -v $(PWD)/pipelines/11_web_ui/templates:/app/templates \
+	  -p 8001:8000 \
+	  wildfire-11_web_ui \
+	  uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
 
 clean:
 	rm -rf data/input/aoi_metadata.json data/input/aoi_reprojected.*

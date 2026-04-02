@@ -22,6 +22,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -418,7 +419,7 @@ def run_real_simulation():
         os.path.join(grids_dir, f)
         for f in os.listdir(grids_dir)
         if f.startswith("ForestGrid") and f.endswith(".csv")
-    ]) if os.path.isdir(grids_dir) else []
+    ], key=lambda p: int(re.search(r'(\d+)', os.path.basename(p)).group(1))) if os.path.isdir(grids_dir) else []
 
     if not grid_files:
         print("ERROR: No ForestGrid*.csv files found in output", file=sys.stderr)

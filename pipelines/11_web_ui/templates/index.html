@@ -200,6 +200,22 @@
     <div class="legend-item"><div class="status-dot" id="dot-ignition"></div> Ignition point</div>
   </div>
 
+  <div class="section" id="animation-panel" style="display:none;">
+    <h2>Fire Animation</h2>
+    <div id="anim-controls">
+      <input type="range" id="anim-slider" min="0" max="0" step="1" value="0"
+             style="width:100%;accent-color:#e94560;margin-bottom:6px;" />
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span id="anim-label" style="font-size:0.82rem;color:#aaa;">T+0hr</span>
+        <span id="anim-counter" style="font-size:0.82rem;color:#aaa;">Frame 1 / 1</span>
+      </div>
+      <button id="anim-play"
+              style="background:#e94560;color:white;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-size:0.82rem;">
+        &#9654; Play
+      </button>
+    </div>
+  </div>
+
   <div class="section" style="font-size:0.72rem;color:#555;line-height:1.6;">
     AOI: Tuckaleechee Cove / Townsend, TN<br>
     Fuel: LANDFIRE FBFM40 (EPSG:5070)<br>
@@ -256,11 +272,12 @@ map.setView([35.585, -83.765], 12);
 // Layer groups (for control)
 // ---------------------------------------------------------------------------
 const layers = {
-  aoi:      L.featureGroup(),
+  aoi:       L.featureGroup(),
   perimeter: L.featureGroup(),
   buildings: L.featureGroup(),
-  exposed:  L.featureGroup(),
-  ignition: L.featureGroup(),
+  exposed:   L.featureGroup(),
+  ignition:  L.featureGroup(),
+  animFrame: L.featureGroup(),
 };
 
 Object.values(layers).forEach(lg => lg.addTo(map));
@@ -383,11 +400,12 @@ Promise.all([
   L.control.layers(
     baseLayers,
     {
-      'AOI boundary':      layers.aoi,
-      'Fire perimeter':    layers.perimeter,
-      'All buildings':     layers.buildings,
-      'Exposed buildings': layers.exposed,
-      'Ignition point':    layers.ignition,
+      'AOI boundary':        layers.aoi,
+      'Fire perimeter':      layers.perimeter,
+      'All buildings':       layers.buildings,
+      'Exposed buildings':   layers.exposed,
+      'Ignition point':      layers.ignition,
+      'Fire animation frame': layers.animFrame,
     },
     { collapsed: false, position: 'topright' }
   ).addTo(map);
@@ -396,6 +414,81 @@ Promise.all([
   console.error('Layer load error:', err);
 }).finally(() => {
   loading.style.display = 'none';
+});
+
+// ---------------------------------------------------------------------------
+// Animation
+// ---------------------------------------------------------------------------
+const animPanel   = document.getElementById('animation-panel');
+const animSlider  = document.getElementById('anim-slider');
+const animLabel   = document.getElementById('anim-label');
+const animCounter = document.getElementById('anim-counter');
+const animPlay    = document.getElementById('anim-play');
+
+const animCache = {};   // keyed by timestep index
+let animTotal   = 0;
+let animInterval = null;
+let isPlaying   = false;
+
+function updateAnimLabel(val) {
+  animLabel.textContent   = 'T+' + val + 'hr';
+  animCounter.textContent = 'Frame ' + (parseInt(val) + 1) + ' / ' + animTotal;
+}
+
+async function loadFrame(idx) {
+  if (!animCache[idx]) {
+    const r = await fetch('/api/grids/' + idx);
+    if (!r.ok) return;
+    animCache[idx] = await r.json();
+  }
+  layers.animFrame.clearLayers();
+  L.geoJSON(animCache[idx], {
+    style: { color: '#ff4500', weight: 0, fillColor: '#ff4500', fillOpacity: 0.55 },
+  }).addTo(layers.animFrame);
+  updateAnimLabel(idx);
+}
+
+function stopPlayback() {
+  if (animInterval) { clearInterval(animInterval); animInterval = null; }
+  isPlaying = false;
+  animPlay.innerHTML = '&#9654; Play';
+}
+
+animSlider.addEventListener('input', () => {
+  stopPlayback();
+  loadFrame(parseInt(animSlider.value));
+});
+
+animPlay.addEventListener('click', () => {
+  if (isPlaying) {
+    stopPlayback();
+  } else {
+    isPlaying = true;
+    animPlay.innerHTML = '&#9208; Pause';
+    animInterval = setInterval(() => {
+      let next = (parseInt(animSlider.value) + 1) % animTotal;
+      animSlider.value = next;
+      loadFrame(next);
+    }, 750);
+  }
+});
+
+// Fetch grid list and initialise animation panel
+fetchJSON('/api/grids/').then(info => {
+  animTotal = info.count;
+  if (animTotal === 0) {
+    // Leave panel hidden; add a status dot in Data Status section
+    const dotList = document.querySelector('#animation-panel');
+    // panel stays hidden — nothing more to do
+    return;
+  }
+  animSlider.max   = animTotal - 1;
+  animSlider.value = 0;
+  updateAnimLabel(0);
+  animPanel.style.display = '';
+  loadFrame(0);
+}).catch(err => {
+  console.warn('Animation grid list unavailable:', err);
 });
 </script>
 </body>
