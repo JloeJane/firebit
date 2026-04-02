@@ -1,0 +1,22 @@
+{
+  "bbox_4326": {
+    "north": 35.65,
+    "south": 35.55,
+    "east": -83.7,
+    "west": -83.83
+  },
+  "bbox_5070": {
+    "xmin": 1089294.78,
+    "ymin": 1458288.99,
+    "xmax": 1102310.81,
+    "ymax": 1470890.09
+  },
+  "area_sq_mi": 50.46,
+  "area_ha": 13070.3,
+  "grid_rows": 421,
+  "grid_cols": 434,
+  "resolution_m": 30,
+  "crs_projected": "EPSG:5070",
+  "crs_geographic": "EPSG:4326",
+  "generated_at": "2026-04-02T19:43:09.924350+00:00"
+}

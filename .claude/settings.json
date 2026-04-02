@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit",
+      "MultiEdit",
+      "Bash(docker *)",
+      "Bash(make *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(test *)",
+      "Bash(grep *)",
+      "Bash(python3 *)",
+      "Bash(pip *)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)"
+    ]
+  }
+}
