@@ -32,13 +32,41 @@ docker run --rm --env-file .env -v $(pwd)/data:/data -p 8001:8000 wildfire-11_we
 
 Use host port 8001 (as shown) if port 8000 is already occupied. Then open http://localhost:8001.
 
+Via the Makefile:
+
+```bash
+make ui        # production mode — baked image, cache rebuilt at startup
+make ui-dev    # dev mode — see below
+```
+
+## Development (live reload)
+
+In dev mode, `src/` and `templates/` are bind-mounted into the container and uvicorn runs with `--reload`. Any save to `app.py` or `index.html` takes effect within a second — no rebuild or container restart needed.
+
+```bash
+make ui-dev
+```
+
+Or directly:
+
+```bash
+docker run --rm --env-file .env \
+  -v $(pwd)/data:/data \
+  -v $(pwd)/pipelines/11_web_ui/src:/app/src \
+  -v $(pwd)/pipelines/11_web_ui/templates:/app/templates \
+  -p 8001:8000 \
+  wildfire-11_web_ui \
+  uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Note: the timestep GeoJSON cache is rebuilt on every reload. With 25 frames this is fast, but expect a brief pause after each `app.py` save.
+
 ## Dependencies
 
-Python: `fastapi`, `uvicorn`, `geopandas`, `shapely`
-System: none beyond python:3.12-slim
+Python: `fastapi`, `uvicorn`, `geopandas`, `shapely`, `rasterio`, `numpy`, `pyproj`
+System: `libgdal-dev`, `gdal-bin` (python:3.12-slim base image)
 
 ## Known limitations
 
-- Read-only — no user interaction beyond map pan/zoom and layer toggle
-- Per-timestep fire spread animation is not implemented; only the final perimeter is displayed
 - All GeoJSON endpoints return an empty FeatureCollection if the upstream file does not yet exist
+- Fire animation panel is hidden if `data/simulation/grids/` is empty (run pipeline 09 first)
