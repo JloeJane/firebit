@@ -37,7 +37,7 @@ data/
 ├── input/        ← pipeline 01 (AOI shapefile)
 ├── topography/   ← pipeline 03 (elevation, slope, aspect)
 ├── fuel/         ← pipeline 02 (LANDFIRE FBFM40 raster)
-├── weather/      ← pipeline 04 (synthetic weather scenario)
+├── weather/      ← pipeline 04 (HRRR weather; 24-hour hourly rows)
 ├── moisture/     ← pipeline 05 (fuel moisture estimates)
 ├── assets/       ← pipeline 06 (buildings, roads, infrastructure)
 ├── grid/         ← pipeline 07 (assembled Cell2Fire inputs)
@@ -60,8 +60,8 @@ Pipeline execution order: **01 → 03 → 02 → 04 → 05 → 06 → 07 → 08 
 | 01 | [shapefile_ingestion](pipelines/01_shapefile_ingestion/README.md) | Generates Townsend, TN AOI boundary |
 | 02 | [fuel](pipelines/02_fuel/README.md) | Fetches LANDFIRE FBFM40 fuel raster (synthetic fallback) |
 | 03 | [topography](pipelines/03_topography/README.md) | Fetches USGS 3DEP elevation; derives slope and aspect |
-| 04 | [weather](pipelines/04_weather/README.md) | Generates synthetic fire weather scenario |
-| 05 | [fuel_moisture](pipelines/05_fuel_moisture/README.md) | Estimates dead and live fuel moisture |
+| 04 | [weather](pipelines/04_weather/README.md) | Fetches real NOAA HRRR analysis via herbie; IEM ASOS fallback |
+| 05 | [fuel_moisture](pipelines/05_fuel_moisture/README.md) | Dead moisture from real weather via Nelson (1984) EMC; live moisture hardcoded |
 | 06 | [assets](pipelines/06_assets/README.md) | Fetches buildings and roads via OpenStreetMap |
 | 07 | [grid_assembly](pipelines/07_grid_assembly/README.md) | Merges all inputs into Cell2Fire-ready grid |
 | 08 | [ignition](pipelines/08_ignition/README.md) | Sets the fire ignition point |
@@ -75,7 +75,7 @@ Pipeline execution order: **01 → 03 → 02 → 04 → 05 → 06 → 07 → 08 
 
 | Target | Description |
 |--------|-------------|
-| `make all` | Build and run pipelines 01–10 in order |
+| `make all` | Build and run pipelines 01–10 in order (pipeline 04 fetches live HRRR data) |
 | `make ui` | Build and launch the web UI at http://localhost:8001 |
 | `make test` | Run the full validation test suite (23 checks) |
 | `make clean` | Delete all pipeline outputs from `data/` |
@@ -115,8 +115,8 @@ To move the fire closer to Townsend, set `IGNITION_LAT=35.60 IGNITION_LON=-83.77
 
 ## Known limitations
 
-- **Fuel data is synthetic** — the LANDFIRE LFPS API is frequently unavailable; the fallback assigns fuel codes by elevation band, not real land cover
-- **Weather is synthetic** — based on Nov 28 2016 Gatlinburg conditions; not fetched from a live source
+- **Live fuel moisture is hardcoded** — dead fuel moisture (1hr/10hr/100hr) is derived from real HRRR weather via Nelson (1984) EMC. Live fuel moisture is fixed at 30% herb / 60% woody regardless of date or season. For the default Gatlinburg November scenario these values are defensible (vegetation is cured), but for spring or summer dates they will overpredict fire spread into live fuel. A future improvement would pull live moisture from WFAS NFMD RAWS observations.
+- **Weather is a single centroid point** — HRRR analysis is extracted at the AOI centroid (35.60°N, 83.77°W) at 3 km resolution. The model does not capture sub-km ridge/valley wind channeling in the Smokies. All 24 weather rows use the same spatial point; terrain-driven wind variation across the AOI is not represented.
 - **Single scenario** — one ignition point, one weather condition, one simulation run
 - **24-hour simulation window** — fire may not reach populated areas with the default ignition
 - **Population estimates** — 2.3 persons/building proxy; no census data
