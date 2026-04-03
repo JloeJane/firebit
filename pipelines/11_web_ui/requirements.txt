@@ -5,3 +5,5 @@ shapely
 rasterio
 numpy
 pyproj
+Pillow
+matplotlib

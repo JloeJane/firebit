@@ -189,6 +189,14 @@
       <div class="swatch-circle" style="background:#e94560;border:2px solid #fff;"></div>
       Ignition point
     </div>
+    <div class="legend-item">
+      <div class="swatch" style="background:linear-gradient(to right,#d2b464,#64963c,#8b6437);width:40px;"></div>
+      Fuel types (grass→timber→litter)
+    </div>
+    <div class="legend-item">
+      <div class="swatch" style="background:linear-gradient(to right,#2a6e00,#9acd32,#f5deb3,#a0522d,#ffffff);width:40px;"></div>
+      Elevation
+    </div>
   </div>
 
   <div class="section">
@@ -397,18 +405,31 @@ Promise.all([
   }
 
   // ── Layer control ──
-  L.control.layers(
+  const layerControl = L.control.layers(
     baseLayers,
     {
-      'AOI boundary':        layers.aoi,
-      'Fire perimeter':      layers.perimeter,
-      'All buildings':       layers.buildings,
-      'Exposed buildings':   layers.exposed,
-      'Ignition point':      layers.ignition,
+      'AOI boundary':         layers.aoi,
+      'Fire perimeter':       layers.perimeter,
+      'All buildings':        layers.buildings,
+      'Exposed buildings':    layers.exposed,
+      'Ignition point':       layers.ignition,
       'Fire animation frame': layers.animFrame,
     },
     { collapsed: false, position: 'topright' }
   ).addTo(map);
+
+  // ── Raster overlays ──
+  fetchJSON('/api/overlay/bounds').then(bounds => {
+    if (!bounds.south) return;
+    const corner1 = [bounds.south, bounds.west];
+    const corner2 = [bounds.north, bounds.east];
+    const fuelOverlay = L.imageOverlay('/api/overlay/fuel.png', [corner1, corner2],
+      { opacity: 0.75, interactive: false });
+    const elevOverlay = L.imageOverlay('/api/overlay/elevation.png', [corner1, corner2],
+      { opacity: 0.65, interactive: false });
+    layerControl.addOverlay(fuelOverlay, 'Fuel types');
+    layerControl.addOverlay(elevOverlay, 'Elevation');
+  }).catch(() => {});
 
 }).catch(err => {
   console.error('Layer load error:', err);
