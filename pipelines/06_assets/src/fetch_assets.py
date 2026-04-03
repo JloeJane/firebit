@@ -1,24 +1,16 @@
 import json
 import os
-import random
-import time
 from datetime import datetime, timezone
 
 import geopandas as gpd
-import numpy as np
 import requests
-from shapely.geometry import Point, Polygon, mapping
+from shapely.geometry import Polygon, mapping
 
 AOI_METADATA = "/data/input/aoi_metadata.json"
 OUT_DIR = "/data/assets"
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 OVERPASS_TIMEOUT = 120
-MIN_BUILDINGS = 10
-
-# Townsend valley approximate center — used to bias synthetic building placement
-TOWNSEND_LAT = 35.594
-TOWNSEND_LON = -83.773
 
 
 def load_aoi():
@@ -104,45 +96,6 @@ out body; >; out skel qt;
     return polys
 
 
-def synthetic_buildings(bbox, n=300, seed=42):
-    """
-    Generate synthetic building footprints concentrated around Townsend valley.
-    Used when Overpass API is unavailable or returns too few results.
-    """
-    print(f"  Generating {n} synthetic buildings (MVP fallback)...")
-    rng = random.Random(seed)
-
-    s, w, n_lat, e = bbox["south"], bbox["west"], bbox["north"], bbox["east"]
-
-    # Cluster 70% near Townsend center, spread 30% across the AOI
-    buildings = []
-    for i in range(n):
-        if rng.random() < 0.70:
-            # Valley cluster: tight spread around Townsend
-            lat = rng.gauss(TOWNSEND_LAT, 0.015)
-            lon = rng.gauss(TOWNSEND_LON, 0.020)
-        else:
-            lat = rng.uniform(s, n_lat)
-            lon = rng.uniform(w, e)
-
-        # Clamp to bbox
-        lat = max(s, min(n_lat, lat))
-        lon = max(w, min(e, lon))
-
-        # Small rectangular footprint (~10×12m)
-        dx = 0.00009  # ~10m in degrees lon
-        dy = 0.00011  # ~12m in degrees lat
-        buildings.append(Polygon([
-            (lon - dx, lat - dy),
-            (lon + dx, lat - dy),
-            (lon + dx, lat + dy),
-            (lon - dx, lat + dy),
-            (lon - dx, lat - dy),
-        ]))
-
-    return buildings
-
-
 def build_buildings_gdf(polys, source_label):
     gdf = gpd.GeoDataFrame(
         {"source": [source_label] * len(polys)},
@@ -218,13 +171,9 @@ def main():
     # --- Buildings ---
     print("\n=== Fetching buildings ===")
     polys = fetch_buildings(bbox)
+    if polys is None:
+        polys = []
     source_label = "OpenStreetMap"
-
-    if polys is None or len(polys) < MIN_BUILDINGS:
-        if polys is not None:
-            print(f"  Only {len(polys)} buildings from Overpass (< {MIN_BUILDINGS}), using synthetic fallback")
-        polys = synthetic_buildings(bbox)
-        source_label = "synthetic_mvp"
 
     buildings_gdf = build_buildings_gdf(polys, source_label)
     buildings_path = os.path.join(OUT_DIR, "buildings.geojson")

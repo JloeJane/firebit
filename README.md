@@ -49,7 +49,7 @@ data/
 
 Pipeline execution order: **01 → 03 → 02 → 04 → 05 → 06 → 07 → 08 → 09 → 10**
 
-(03 runs before 02 because the fuel pipeline's synthetic fallback requires the elevation raster.)
+(03 runs before 02 to ensure the AOI raster dimensions are established before fuel reprojection.)
 
 ---
 
@@ -58,7 +58,7 @@ Pipeline execution order: **01 → 03 → 02 → 04 → 05 → 06 → 07 → 08 
 | # | Name | What it does |
 |---|------|-------------|
 | 01 | [shapefile_ingestion](pipelines/01_shapefile_ingestion/README.md) | Generates Townsend, TN AOI boundary |
-| 02 | [fuel](pipelines/02_fuel/README.md) | Fetches LANDFIRE FBFM40 fuel raster (synthetic fallback) |
+| 02 | [fuel](pipelines/02_fuel/README.md) | Fetches LANDFIRE FBFM40 fuel raster via LFPS v2 API |
 | 03 | [topography](pipelines/03_topography/README.md) | Fetches USGS 3DEP elevation; derives slope and aspect |
 | 04 | [weather](pipelines/04_weather/README.md) | Fetches real NOAA HRRR analysis via herbie; IEM ASOS fallback |
 | 05 | [fuel_moisture](pipelines/05_fuel_moisture/README.md) | Dead moisture from real weather via Nelson (1984) EMC; live moisture hardcoded |
@@ -115,7 +115,8 @@ To move the fire closer to Townsend, set `IGNITION_LAT=35.60 IGNITION_LON=-83.77
 
 ## Known limitations
 
-- **Live fuel moisture is hardcoded** — dead fuel moisture (1hr/10hr/100hr) is derived from real HRRR weather via Nelson (1984) EMC. Live fuel moisture is fixed at 30% herb / 60% woody regardless of date or season. For the default Gatlinburg November scenario these values are defensible (vegetation is cured), but for spring or summer dates they will overpredict fire spread into live fuel. A future improvement would pull live moisture from WFAS NFMD RAWS observations.
+- **Data vintage does not track simulation date** — the platform fetches the most recent available data for each source regardless of the scenario date. For example, the default scenario simulates the 2016 Gatlinburg fire using 2022 LANDFIRE fuel data. For accurate historical reconstruction, every data source should be pinned to the year of the event: fuel (LANDFIRE LF{YYYY}), weather (HRRR archive — already date-specific), topography (3DEP is largely static), and assets (OSM historical snapshots are not available). A future improvement would accept a `SIMULATION_YEAR` variable and request the matching LANDFIRE version from the LFPS API.
+- **Live fuel moisture is climatological** — dead fuel moisture (1hr/10hr/100hr) is derived from real HRRR weather via Nelson (1984) EMC. Live fuel moisture is fixed at 30% herb / 60% woody, which is defensible for a late-November cured-vegetation scenario but wrong for spring or summer dates. A future improvement would pull live moisture from WFAS NFMD RAWS observations.
 - **Weather is a single centroid point** — HRRR analysis is extracted at the AOI centroid (35.60°N, 83.77°W) at 3 km resolution. The model does not capture sub-km ridge/valley wind channeling in the Smokies. All 24 weather rows use the same spatial point; terrain-driven wind variation across the AOI is not represented.
 - **Single scenario** — one ignition point, one weather condition, one simulation run
 - **24-hour simulation window** — fire may not reach populated areas with the default ignition
@@ -159,7 +160,7 @@ Where `xmin/ymin/xmax/ymax` come from `aoi_metadata.json` (`bbox_5070`) and `nco
 - Add a 2-second delay between requests
 - Reduce bbox size (fetch a slightly smaller area)
 - Use a mirror: `https://overpass.kumi.systems/api/interpreter`
-- Pipeline 06 falls back to 300 synthetic buildings automatically if the API returns fewer than 10 results
+- Pipeline 06 uses whatever OSM returns — if buildings are 0, consequence analysis will report 0 exposed structures
 
 ---
 
@@ -167,18 +168,13 @@ Where `xmin/ymin/xmax/ymax` come from `aoi_metadata.json` (`bbox_5070`) and `nco
 
 See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for full prioritization. Summary:
 
-**In progress (Phase 6A):**
-- Satellite base layer + layer toggles in the Leaflet UI
-- Fire spread animation (time-slider over existing per-timestep GeoTIFFs)
-- Click-to-inspect buildings (dollar value, risk score, fire arrival time)
-- Dollar-value damage estimates (county assessor data)
-- CWPP-style auto-generated PDF reports
+**Next (Phase 6B.5):**
+- Multi-scenario comparison UI (side-by-side Leaflet maps; baseline / high-wind / wind-shift scenarios pre-baked)
 
-**Next bundle (Phase 6B — implement together):**
-- Real LANDFIRE fuel tile (pre-downloaded, no more synthetic fallback)
-- Real weather via NOAA HRRR / RAWS (`herbie` package)
-- Live fuel moisture from MODIS/VIIRS NDVI
-- Multi-scenario comparison UI (side-by-side maps)
+**Data quality:**
+- `SIMULATION_YEAR` env variable — pin LANDFIRE version, OSM snapshot, and other sources to the event year
+- Live fuel moisture from WFAS NFMD RAWS observations (currently climatological estimate)
+- Spatially distributed weather (per-cell wind from terrain model, not single centroid point)
 
 **Later:** Census population, evacuation time modeling, Voronoi grid, orchestration upgrade
 
