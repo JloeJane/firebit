@@ -8,7 +8,10 @@ import matplotlib.cm as cm
 import numpy as np
 import rasterio
 from rasterio.features import shapes as rasterio_shapes
+from rasterio.warp import reproject, Resampling, calculate_default_transform
 from pyproj import Transformer
+from shapely.geometry import shape
+from shapely.ops import unary_union
 from PIL import Image
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -22,7 +25,6 @@ HTML_PATH = BASE_DIR / "templates" / "index.html"
 # Data paths
 # ---------------------------------------------------------------------------
 AOI_SHP          = "/data/input/aoi_reprojected.shp"
-FIRE_PERIMETER   = "/data/output/fire_perimeter.geojson"
 EXPOSED_BLDGS    = "/data/output/exposed_buildings.geojson"
 ALL_BLDGS        = "/data/assets/buildings.geojson"
 SUMMARY_JSON     = "/data/output/consequence_summary.json"
@@ -33,45 +35,75 @@ ELEVATION_TIF    = Path("/data/topography/elevation.tif")
 AOI_METADATA     = "/data/input/aoi_metadata.json"
 
 # ---------------------------------------------------------------------------
-# Timestep cache — built once at startup
+# Timestep helpers — lazy-loaded on first request
 # ---------------------------------------------------------------------------
 TIMESTEP_CACHE: dict[int, dict] = {}
+_TRANSFORMER = Transformer.from_crs(5070, 4326, always_xy=True)
 
-def _build_timestep_cache() -> None:
-    if not GRIDS_DIR.exists():
-        print("WARNING: data/simulation/grids/ does not exist — animation unavailable")
-        return
-    tifs = sorted(GRIDS_DIR.glob("grid_t*.tif"))
-    if not tifs:
-        print("WARNING: no grid_t*.tif files found in data/simulation/grids/ — animation unavailable")
-        return
-    transformer = Transformer.from_crs(5070, 4326, always_xy=True)
-    for idx, tif_path in enumerate(tifs):
+
+def _tif_list() -> list[Path]:
+    return sorted(GRIDS_DIR.glob("grid_t*.tif"))
+
+
+def _vectorize_tif(tif_path: Path) -> list[dict]:
+    """Read a burned-cell GeoTIFF and return WGS84 GeoJSON features."""
+    features = []
+    with rasterio.open(tif_path) as src:
+        band = src.read(1).astype(np.uint8)
+        mask = (band == 1).astype(np.uint8)
+        for geom_dict, val in rasterio_shapes(mask, transform=src.transform):
+            if val != 1:
+                continue
+            coords = geom_dict["coordinates"]
+            reprojected = []
+            for ring in coords:
+                new_ring = [list(_TRANSFORMER.transform(x, y)) for x, y in ring]
+                reprojected.append(new_ring)
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": geom_dict["type"], "coordinates": reprojected},
+                "properties": {},
+            })
+    return features
+
+
+def _load_timestep(idx: int) -> dict:
+    if idx not in TIMESTEP_CACHE:
+        tifs = _tif_list()
+        if idx >= len(tifs):
+            return {"type": "FeatureCollection", "features": []}
         try:
-            with rasterio.open(tif_path) as src:
-                band = src.read(1).astype(np.uint8)
-                mask = (band == 1).astype(np.uint8)
-                features = []
-                for geom_dict, val in rasterio_shapes(mask, transform=src.transform):
-                    if val != 1:
-                        continue
-                    # Reproject coordinates from EPSG:5070 to EPSG:4326
-                    coords = geom_dict["coordinates"]
-                    reprojected = []
-                    for ring in coords:
-                        new_ring = [list(transformer.transform(x, y)) for x, y in ring]
-                        reprojected.append(new_ring)
-                    features.append({
-                        "type": "Feature",
-                        "geometry": {"type": geom_dict["type"], "coordinates": reprojected},
-                        "properties": {},
-                    })
+            features = _vectorize_tif(tifs[idx])
             TIMESTEP_CACHE[idx] = {"type": "FeatureCollection", "features": features}
-            print(f"INFO: loaded timestep {idx} from {tif_path.name} ({len(features)} features)")
         except Exception as e:
-            print(f"WARNING: failed to load {tif_path}: {e}")
+            print(f"WARNING: failed to load timestep {idx}: {e}")
+            TIMESTEP_CACHE[idx] = {"type": "FeatureCollection", "features": []}
+    return TIMESTEP_CACHE[idx]
 
-_build_timestep_cache()
+
+def _perimeter_from_final_frame() -> dict:
+    """Derive fire perimeter by dissolving burned cells in the final grid_t*.tif."""
+    tifs = _tif_list()
+    if not tifs:
+        return EMPTY_FC
+    try:
+        with rasterio.open(tifs[-1]) as src:
+            band = src.read(1).astype(np.uint8)
+            mask = (band == 1).astype(np.uint8)
+            polygons = [
+                shape(geom)
+                for geom, val in rasterio_shapes(mask, transform=src.transform)
+                if val == 1
+            ]
+        if not polygons:
+            return EMPTY_FC
+        merged = unary_union(polygons)
+        # Reproject from EPSG:5070 to EPSG:4326 via geopandas
+        gdf = gpd.GeoDataFrame(geometry=[merged], crs="EPSG:5070").to_crs(epsg=4326)
+        return json.loads(gdf.to_json())
+    except Exception as e:
+        print(f"WARNING: failed to derive perimeter from final frame: {e}")
+        return EMPTY_FC
 
 
 # ---------------------------------------------------------------------------
@@ -121,17 +153,42 @@ def _build_fuel_lut() -> np.ndarray:
     return lut
 
 
+def _warp_to_4326(src_path: Path) -> np.ndarray:
+    """Reproject a single-band raster to EPSG:4326 aligned to the AOI bbox_4326 extent."""
+    with open(AOI_METADATA) as f:
+        bbox = json.load(f).get("bbox_4326", {})
+    west  = bbox["west"]
+    south = bbox["south"]
+    east  = bbox["east"]
+    north = bbox["north"]
+
+    with rasterio.open(src_path) as src:
+        # Compute output dimensions that preserve approx the same pixel density
+        _, native_w, native_h = calculate_default_transform(
+            src.crs, "EPSG:4326", src.width, src.height, *src.bounds
+        )
+        dst_transform = rasterio.transform.from_bounds(west, south, east, north, native_w, native_h)
+        destination = np.zeros((native_h, native_w), dtype=np.float32)
+        reproject(
+            source=rasterio.band(src, 1),
+            destination=destination,
+            src_transform=src.transform,
+            src_crs=src.crs,
+            dst_transform=dst_transform,
+            dst_crs="EPSG:4326",
+            resampling=Resampling.nearest,
+            src_nodata=src.nodata,
+            dst_nodata=0,
+        )
+    return destination
+
+
 def _generate_fuel_overlay() -> bytes | None:
     if not FUEL_TIF.exists():
         print("WARNING: fuel_clipped.tif not found — fuel overlay unavailable")
         return None
     try:
-        with rasterio.open(FUEL_TIF) as src:
-            band = src.read(1)
-            nodata = src.nodata
-        if nodata is not None:
-            band = np.where(band == int(nodata), 0, band)
-        band = band.astype(np.uint8)
+        band = _warp_to_4326(FUEL_TIF).astype(np.uint8)
         lut = _build_fuel_lut()
         rgba = lut[band]
         buf = io.BytesIO()
@@ -148,10 +205,8 @@ def _generate_elevation_overlay() -> bytes | None:
         print("WARNING: elevation.tif not found — elevation overlay unavailable")
         return None
     try:
-        with rasterio.open(ELEVATION_TIF) as src:
-            band = src.read(1).astype(np.float32)
-            nodata = src.nodata
-        mask = (band == nodata) if nodata is not None else ~np.isfinite(band)
+        band = _warp_to_4326(ELEVATION_TIF)
+        mask = (band == 0)
         band[mask] = np.nan
         valid = band[~mask]
         elev_min, elev_max = float(np.nanmin(valid)), float(np.nanmax(valid))
@@ -240,7 +295,7 @@ async def get_aoi():
 
 @app.get("/api/fire-perimeter")
 async def get_fire_perimeter():
-    return JSONResponse(safe_read_geojson(FIRE_PERIMETER))
+    return JSONResponse(_perimeter_from_final_frame())
 
 
 @app.get("/api/buildings/exposed")
@@ -307,12 +362,13 @@ async def get_overlay_bounds():
 
 @app.get("/api/grids/")
 async def get_grids_list():
-    keys = sorted(TIMESTEP_CACHE.keys())
-    return JSONResponse({"timesteps": keys, "count": len(keys)})
+    tifs = _tif_list()
+    return JSONResponse({"timesteps": list(range(len(tifs))), "count": len(tifs)})
 
 
 @app.get("/api/grids/{timestep}")
 async def get_grid_timestep(timestep: int):
-    if timestep not in TIMESTEP_CACHE:
+    tifs = _tif_list()
+    if timestep < 0 or timestep >= len(tifs):
         return JSONResponse({"detail": "timestep not found"}, status_code=404)
-    return JSONResponse(TIMESTEP_CACHE[timestep])
+    return JSONResponse(_load_timestep(timestep))

@@ -127,19 +127,6 @@ To move the fire closer to Townsend, set `IGNITION_LAT=35.60 IGNITION_LON=-83.77
 
 ## Troubleshooting
 
-### GDAL won't install in Docker
-Try these base images in order:
-1. `ghcr.io/osgeo/gdal:ubuntu-small-3.9.3` (GDAL pre-installed; add `python3-pip`)
-2. `python:3.12-slim` with `apt-get install -y libgdal-dev gdal-bin && pip install GDAL==$(gdal-config --version)`
-3. `ubuntu:22.04` with `apt-get install -y python3-pip gdal-bin libgdal-dev python3-gdal`
-
-### Cell2Fire won't compile
-Common issues:
-- Missing Boost: `apt-get install -y libboost-all-dev`
-- Missing make: `apt-get install -y build-essential`
-- Wrong directory: the Makefile is in `cell2fire/Cell2FireC/`, not the repo root
-- Try the fire2a fork: https://github.com/fire2a/C2F-W
-
 ### Cell2Fire runs but nothing burns
 Common causes:
 - Ignition cell is on a non-burnable fuel type (water, urban, barren)
