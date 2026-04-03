@@ -9,12 +9,15 @@ Each prompt includes:
 - **Acceptance tests** (bash commands that must pass)
 - **Known landmines** (common failure points)
 
-> **Already done:** Satellite base layer (6A.0) — Esri World Imagery, CartoDB Dark, and OpenStreetMap Street are wired into the Leaflet base layer control in `pipelines/11_web_ui/templates/index.html`. Satellite is the default.
+> **Already done:**
+> - 6A.0 — Satellite base layer (Esri World Imagery default, + CartoDB Dark, OpenStreetMap Street)
+> - 6A.1 — Fire spread animation (time-slider + play/pause over 25 timestep GeoTIFFs)
+> - 6A.2 — Raster overlays (fuel type + elevation as toggleable PNG image layers)
 
 **Prompt order (logical dependency):**
-1. 6A.1 — Fire spread animation (time-slider)
-2. 6A.2 — Raster overlays (fuel type + elevation as map layers)
-3. 6A.3 — Dollar-value damage estimates (enriches building data before UI uses it)
+1. ~~6A.1 — Fire spread animation~~ ✓
+2. ~~6A.2 — Raster overlays~~ ✓
+3. ~~6A.3 — Dollar-value damage estimates~~ ✓
 4. 6A.4 — Click-to-inspect building popups (depends on 6A.3 data)
 5. 6A.5 — CWPP report generation
 
