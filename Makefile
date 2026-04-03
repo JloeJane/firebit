@@ -51,13 +51,19 @@ run-10: build-10_consequence
 # Port 8000 may be occupied; UI binds to 8001 on the host
 ui: build-11_web_ui
 	@echo "=== Launching Web UI on http://localhost:8001 ==="
-	docker run --rm --env-file .env -v $(PWD)/data:/data -p 8001:8000 wildfire-11_web_ui
+	docker run --rm --env-file .env \
+	  -v $(PWD)/data:/data \
+	  -v /var/run/docker.sock:/var/run/docker.sock \
+	  -e HOST_DATA_DIR=$(PWD)/data \
+	  -p 8001:8000 wildfire-11_web_ui
 
 # Dev mode: src/ and templates/ are live-mounted; uvicorn --reload picks up changes instantly
 ui-dev: build-11_web_ui
 	@echo "=== Launching Web UI (dev/reload) on http://localhost:8001 ==="
-	docker run --rm --env-file .env \
+	docker run --rm --name ui-dev --env-file .env \
 	  -v $(PWD)/data:/data \
+	  -v /var/run/docker.sock:/var/run/docker.sock \
+	  -e HOST_DATA_DIR=$(PWD)/data \
 	  -v $(PWD)/pipelines/11_web_ui/src:/app/src \
 	  -v $(PWD)/pipelines/11_web_ui/templates:/app/templates \
 	  -p 8001:8000 \

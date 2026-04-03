@@ -239,7 +239,8 @@ def main():
         lfps_download(download_url, cache_zip)
 
     # --- Unzip and locate GeoTIFF ---
-    extract_dir = os.path.join(CACHE_DIR, "extracted")
+    extract_dir = os.path.join(CACHE_DIR, f"extracted_{bbox_hash}")
+    os.makedirs(extract_dir, exist_ok=True)
     with zipfile.ZipFile(cache_zip) as zf:
         zf.extractall(extract_dir)
 

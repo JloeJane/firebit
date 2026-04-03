@@ -1,3 +1,4 @@
+data/input/*
 data/fuel/*
 data/topography/*
 data/weather/*
@@ -8,11 +9,12 @@ data/simulation/*
 data/consequence/*
 data/output/*
 
+!data/input/.gitkeep
 !data/fuel/.gitkeep
 !data/fuel/cache/
 data/fuel/cache/*.zip
 data/fuel/cache/*.zip.*
-data/fuel/cache/extracted/
+data/fuel/cache/extracted*/
 !data/fuel/cache/.gitkeep
 !data/topography/.gitkeep
 !data/weather/.gitkeep
@@ -22,6 +24,8 @@ data/fuel/cache/extracted/
 !data/simulation/.gitkeep
 !data/consequence/.gitkeep
 !data/output/.gitkeep
+
+.claude/
 
 __pycache__/
 *.pyc

@@ -8,6 +8,9 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -132,12 +135,31 @@
     }
 
     .leaflet-control-attribution a { color: #888 !important; }
+
+    .leaflet-draw-toolbar a {
+      background-color: #16213e !important;
+      border-color: #0f3460 !important;
+      color: #ccc !important;
+    }
+    .leaflet-draw-toolbar a:hover { background-color: #0f3460 !important; }
+    .leaflet-draw-section { border-color: #0f3460 !important; }
+
+    @keyframes stepPulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.45; }
+    }
+    .step-pending { font-size:0.75rem; color:#888; padding:2px 0; }
+    .step-active  { font-size:0.75rem; color:#4fc3f7; padding:2px 0; animation: stepPulse 1.1s ease-in-out infinite; }
+    .step-done    { font-size:0.75rem; color:#4caf50; padding:2px 0; }
+    .step-error   { font-size:0.75rem; color:#e94560; padding:2px 0; }
   </style>
 </head>
 <body>
 
 <div id="sidebar">
   <h1>🔥 Wildfire Platform</h1>
+  <div id="scenario-label"
+       style="font-size:0.72rem;color:#888;padding:2px 16px 6px;display:none;"></div>
 
   <div class="section">
     <h2>Simulation Summary</h2>
@@ -206,6 +228,69 @@
     <div class="legend-item"><div class="status-dot" id="dot-buildings"></div> Buildings</div>
     <div class="legend-item"><div class="status-dot" id="dot-exposed"></div> Exposed buildings</div>
     <div class="legend-item"><div class="status-dot" id="dot-ignition"></div> Ignition point</div>
+    <button id="btn-reset-map"
+            style="margin-top:8px;width:100%;background:transparent;color:#666;
+                   border:1px solid #333;border-radius:4px;padding:4px;
+                   cursor:pointer;font-size:0.75rem;">
+      ↺ Reset map layers
+    </button>
+  </div>
+
+  <div class="section" id="scenario-panel">
+    <h2>Scenario Builder</h2>
+
+    <div style="margin-bottom:10px;">
+      <div style="font-size:0.78rem;color:#888;margin-bottom:4px;">1. Draw AOI bounding box</div>
+      <button id="btn-draw-bbox"
+              style="background:#0f3460;color:#ccc;border:1px solid #0f3460;border-radius:4px;
+                     padding:4px 10px;cursor:pointer;font-size:0.80rem;width:100%;">
+        ⬜ Draw Bbox
+      </button>
+      <div id="bbox-display"
+           style="font-size:0.72rem;color:#aaa;margin-top:4px;display:none;white-space:pre;"></div>
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <div style="font-size:0.78rem;color:#888;margin-bottom:4px;">2. Weather date</div>
+      <input type="date" id="weather-date" value="2016-11-28"
+             style="background:#1a1a2e;color:#e0e0e0;border:1px solid #0f3460;
+                    border-radius:4px;padding:4px 8px;font-size:0.82rem;width:100%;
+                    box-sizing:border-box;" />
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <div style="font-size:0.78rem;color:#888;margin-bottom:4px;">3. Drop ignition point</div>
+      <button id="btn-drop-ignition"
+              style="background:#0f3460;color:#ccc;border:1px solid #0f3460;border-radius:4px;
+                     padding:4px 10px;cursor:pointer;font-size:0.80rem;width:100%;">
+        📍 Drop Point
+      </button>
+      <div id="ignition-display"
+           style="font-size:0.72rem;color:#aaa;margin-top:4px;display:none;white-space:pre;"></div>
+    </div>
+
+    <button id="btn-run-scenario" disabled
+            style="width:100%;background:#e94560;color:white;border:none;border-radius:4px;
+                   padding:7px;font-size:0.85rem;font-weight:600;opacity:0.4;
+                   cursor:not-allowed;margin-bottom:4px;">
+      ▶ Run Scenario
+    </button>
+    <button id="btn-clear-scenario"
+            style="width:100%;background:transparent;color:#666;border:1px solid #333;
+                   border-radius:4px;padding:4px;cursor:pointer;font-size:0.75rem;">
+      ✕ Clear
+    </button>
+    <div id="run-progress-panel" style="display:none;margin-top:10px;">
+      <div id="progress-steps"></div>
+      <button id="btn-cancel-run"
+              style="margin-top:8px;width:100%;background:transparent;color:#888;
+                     border:1px solid #444;border-radius:4px;padding:4px;
+                     cursor:pointer;font-size:0.75rem;">
+        ✕ Cancel run
+      </button>
+    </div>
+    <div id="scenario-error"
+         style="font-size:0.75rem;color:#e94560;margin-top:6px;display:none;line-height:1.4;"></div>
   </div>
 
   <div class="section" id="animation-panel" style="display:none;">
@@ -231,7 +316,17 @@
   </div>
 </div>
 
-<div id="map"></div>
+<div id="map">
+  <div id="wind-indicator" style="display:none;position:absolute;z-index:800;
+       bottom:36px;right:10px;background:rgba(22,33,62,0.88);
+       border:1px solid #0f3460;border-radius:6px;padding:8px 14px;
+       color:#e0e0e0;text-align:center;min-width:72px;pointer-events:none;">
+    <div id="wind-arrow"
+         style="font-size:1.5rem;line-height:1;transition:transform 0.4s ease;">↑</div>
+    <div id="wind-speed" style="font-size:0.80rem;font-weight:600;margin-top:3px;">— km/h</div>
+    <div style="font-size:0.62rem;color:#666;margin-top:1px;letter-spacing:0.05em;">WIND</div>
+  </div>
+</div>
 <div id="loading">Loading layers…</div>
 
 <script>
@@ -291,6 +386,210 @@ const layers = {
 Object.values(layers).forEach(lg => lg.addTo(map));
 
 // ---------------------------------------------------------------------------
+// Scenario Builder — state
+// ---------------------------------------------------------------------------
+let scenarioBbox         = null;   // {north, south, east, west}
+let scenarioIgnition     = null;   // {lat, lon}
+let drawnBboxLayer       = null;
+let placedIgnitionMarker = null;
+let scenarioMode         = null;   // 'ignition' | null
+let layerControl     = null;
+let fuelOverlayLayer = null;
+let elevOverlayLayer = null;
+
+const PIPELINE_STEPS = [
+  "AOI boundary", "Topography (3DEP)", "Fuel data (LANDFIRE)", "Weather (HRRR)",
+  "Fuel moisture", "Assets (OSM)", "Grid assembly", "Ignition point",
+  "Fire simulation (C2F-W)", "Consequence analysis"
+];
+
+// ---------------------------------------------------------------------------
+// Scenario Builder — Leaflet.Draw setup
+// ---------------------------------------------------------------------------
+const drawnItems = new L.FeatureGroup();
+map.addLayer(drawnItems);
+
+const drawRect = new L.Draw.Rectangle(map, {
+  shapeOptions: { color: '#4fc3f7', weight: 2, fillOpacity: 0.05, dashArray: '6 4' }
+});
+
+map.on(L.Draw.Event.CREATED, function(e) {
+  if (drawnBboxLayer) map.removeLayer(drawnBboxLayer);
+  drawnBboxLayer = e.layer;
+  map.addLayer(drawnBboxLayer);
+  const b = e.layer.getBounds();
+  scenarioBbox = {
+    north: b.getNorth(), south: b.getSouth(),
+    east:  b.getEast(),  west:  b.getWest()
+  };
+  document.getElementById('bbox-display').style.display = '';
+  document.getElementById('bbox-display').textContent =
+    `N ${b.getNorth().toFixed(4)}  S ${b.getSouth().toFixed(4)}\n` +
+    `E ${b.getEast().toFixed(4)}   W ${b.getWest().toFixed(4)}`;
+  _checkRunReady();
+});
+
+// ---------------------------------------------------------------------------
+// Scenario Builder — ignition point placement
+// ---------------------------------------------------------------------------
+map.on('click', function(e) {
+  if (scenarioMode !== 'ignition') return;
+  if (placedIgnitionMarker) map.removeLayer(placedIgnitionMarker);
+  placedIgnitionMarker = L.circleMarker(e.latlng, {
+    radius: 9, color: '#fff', weight: 2, fillColor: '#e94560', fillOpacity: 1
+  }).addTo(map);
+  scenarioIgnition = { lat: e.latlng.lat, lon: e.latlng.lng };
+  document.getElementById('ignition-display').style.display = '';
+  document.getElementById('ignition-display').textContent =
+    `${e.latlng.lat.toFixed(5)}°N  ${e.latlng.lng.toFixed(5)}°E`;
+  scenarioMode = null;
+  map.getContainer().style.cursor = '';
+  document.getElementById('btn-drop-ignition').textContent = '📍 Drop Point';
+  _checkRunReady();
+});
+
+// ---------------------------------------------------------------------------
+// Scenario Builder — button handlers and helpers
+// ---------------------------------------------------------------------------
+function _checkRunReady() {
+  const ready = scenarioBbox !== null && scenarioIgnition !== null;
+  const btn = document.getElementById('btn-run-scenario');
+  btn.disabled = !ready;
+  btn.style.opacity = ready ? '1' : '0.4';
+  btn.style.cursor  = ready ? 'pointer' : 'not-allowed';
+}
+
+document.getElementById('btn-draw-bbox').addEventListener('click', () => drawRect.enable());
+
+document.getElementById('btn-drop-ignition').addEventListener('click', () => {
+  scenarioMode = 'ignition';
+  map.getContainer().style.cursor = 'crosshair';
+  document.getElementById('btn-drop-ignition').textContent = '🎯 Click map…';
+});
+
+document.getElementById('btn-run-scenario').addEventListener('click', async () => {
+  document.getElementById('scenario-error').style.display = 'none';
+  document.getElementById('btn-run-scenario').disabled = true;
+  document.getElementById('btn-run-scenario').textContent = '⏳ Starting…';
+  const body = {
+    bbox_north:   scenarioBbox.north,
+    bbox_south:   scenarioBbox.south,
+    bbox_east:    scenarioBbox.east,
+    bbox_west:    scenarioBbox.west,
+    weather_date: document.getElementById('weather-date').value,
+    ignition_lat: scenarioIgnition.lat,
+    ignition_lon: scenarioIgnition.lon,
+  };
+  const resp = await fetch('/api/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (resp.status === 202) {
+    startProgressStream();
+  } else {
+    const d = await resp.json();
+    document.getElementById('scenario-error').textContent = d.detail || 'Unknown error';
+    document.getElementById('scenario-error').style.display = '';
+    document.getElementById('btn-run-scenario').disabled = false;
+    document.getElementById('btn-run-scenario').textContent = '▶ Run Scenario';
+    _checkRunReady();
+  }
+});
+
+document.getElementById('btn-clear-scenario').addEventListener('click', () => {
+  scenarioBbox = null;
+  scenarioIgnition = null;
+  scenarioMode = null;
+  if (drawnBboxLayer)       { map.removeLayer(drawnBboxLayer);       drawnBboxLayer = null; }
+  if (placedIgnitionMarker) { map.removeLayer(placedIgnitionMarker); placedIgnitionMarker = null; }
+  map.getContainer().style.cursor = '';
+  ['bbox-display','ignition-display','scenario-error'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+  document.getElementById('btn-drop-ignition').textContent = '📍 Drop Point';
+  document.getElementById('btn-run-scenario').textContent  = '▶ Run Scenario';
+  _checkRunReady();
+});
+
+// ---------------------------------------------------------------------------
+// Scenario Builder — SSE progress stream
+// ---------------------------------------------------------------------------
+let _runEventSource = null;
+
+function startProgressStream() {
+  const progressPanel = document.getElementById('run-progress-panel');
+  const progressSteps = document.getElementById('progress-steps');
+  progressPanel.style.display = '';
+  progressSteps.innerHTML = PIPELINE_STEPS.map((s, i) =>
+    `<div id="step-${i}" class="step-pending">⬜ ${s}</div>`
+  ).join('');
+
+  // name → index lookup so SSE events (which carry display names) can find the right div
+  const stepIndex = Object.fromEntries(PIPELINE_STEPS.map((s, i) => [s, i]));
+
+  document.getElementById('btn-run-scenario').textContent = '⏳ Running…';
+
+  if (_runEventSource) _runEventSource.close();
+  _runEventSource = new EventSource('/api/run/status');
+
+  _runEventSource.onmessage = async function(e) {
+    const data = JSON.parse(e.data);
+    const idx = stepIndex[data.step];
+
+    if (data.type === 'step_start' && idx !== undefined) {
+      const el = document.getElementById('step-' + idx);
+      if (el) { el.className = 'step-active'; el.textContent = '⏳ ' + data.step; }
+    } else if (data.type === 'step_done' && idx !== undefined) {
+      const el = document.getElementById('step-' + idx);
+      if (el) { el.className = 'step-done'; el.textContent = '✅ ' + data.step; }
+    } else if (data.type === 'complete') {
+      _runEventSource.close();
+      document.getElementById('progress-steps').insertAdjacentHTML('beforeend',
+        '<div style="font-size:0.78rem;color:#4caf50;margin-top:6px;">✅ Complete — reloading map…</div>');
+      await new Promise(r => setTimeout(r, 1200));
+      await reloadAllLayers();
+      document.getElementById('run-progress-panel').style.display = 'none';
+      document.getElementById('btn-run-scenario').textContent     = '▶ Run Scenario';
+      _checkRunReady();
+      const d   = document.getElementById('weather-date').value;
+      const lat = scenarioIgnition ? scenarioIgnition.lat.toFixed(4) : '—';
+      const lon = scenarioIgnition ? scenarioIgnition.lon.toFixed(4) : '—';
+      const lbl = document.getElementById('scenario-label');
+      if (lbl) { lbl.textContent = `Custom: ${d} · ${lat}°N ${lon}°E`; lbl.style.display = ''; }
+    } else if (data.type === 'error') {
+      if (idx !== undefined) {
+        const el = document.getElementById('step-' + idx);
+        if (el) { el.className = 'step-error'; el.textContent = '✗ ' + data.step; }
+      }
+      _runEventSource.close();
+      document.getElementById('scenario-error').textContent = data.message || 'Run failed';
+      document.getElementById('scenario-error').style.display = '';
+      document.getElementById('btn-run-scenario').textContent = '▶ Run Scenario';
+      _checkRunReady();
+    } else if (data.type === 'cancelled') {
+      _runEventSource.close();
+      document.getElementById('btn-run-scenario').textContent = '▶ Run Scenario';
+      _checkRunReady();
+    }
+    // type === 'ping' → ignore
+  };
+
+  _runEventSource.onerror = function() {
+    _runEventSource.close();
+    document.getElementById('btn-run-scenario').textContent = '▶ Run Scenario';
+    _checkRunReady();
+  };
+
+  document.getElementById('btn-cancel-run').addEventListener('click', () => {
+    if (_runEventSource) _runEventSource.close();
+    progressPanel.style.display = 'none';
+    document.getElementById('btn-run-scenario').textContent = '▶ Run Scenario';
+    _checkRunReady();
+  }, { once: true });
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 function setDot(id, ok) {
@@ -307,6 +606,20 @@ async function fetchJSON(url) {
   if (!r.ok) throw new Error(url + ' → ' + r.status);
   return r.json();
 }
+
+function resetMapLayers() {
+  Object.values(layers).forEach(lg => lg.clearLayers());
+  ['dot-aoi','dot-perimeter','dot-buildings','dot-exposed','dot-ignition'].forEach(id => setDot(id, false));
+  ['s-area','s-acres','s-structures','s-population','s-roads','s-arrival'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '—';
+  });
+  stopPlayback();
+  animTotal = 0;
+  animPanel.style.display = 'none';
+}
+
+document.getElementById('btn-reset-map').addEventListener('click', resetMapLayers);
 
 // ---------------------------------------------------------------------------
 // Load all layers in parallel
@@ -405,7 +718,7 @@ Promise.all([
   }
 
   // ── Layer control ──
-  const layerControl = L.control.layers(
+  layerControl = L.control.layers(
     baseLayers,
     {
       'AOI boundary':         layers.aoi,
@@ -438,6 +751,121 @@ Promise.all([
 });
 
 // ---------------------------------------------------------------------------
+// Soft layer reload (used after scenario run completes)
+// ---------------------------------------------------------------------------
+async function reloadAllLayers() {
+  animCache = {};
+
+  // AOI
+  layers.aoi.clearLayers();
+  const aoi = await fetchJSON('/api/aoi');
+  if (hasFeatures(aoi)) {
+    L.geoJSON(aoi, {
+      style: { color: '#4fc3f7', weight: 2, dashArray: '6 4', fillOpacity: 0, opacity: 0.9 }
+    }).addTo(layers.aoi);
+    map.fitBounds(layers.aoi.getBounds(), { padding: [20, 20] });
+    setDot('dot-aoi', true);
+  }
+
+  // Fire perimeter
+  layers.perimeter.clearLayers();
+  const perimeter = await fetchJSON('/api/fire-perimeter');
+  if (hasFeatures(perimeter)) {
+    L.geoJSON(perimeter, {
+      style: { color: '#e94560', weight: 2, fillColor: '#e94560', fillOpacity: 0.4 }
+    }).addTo(layers.perimeter);
+    setDot('dot-perimeter', true);
+  }
+
+  // All buildings
+  layers.buildings.clearLayers();
+  const allBldgs = await fetchJSON('/api/buildings/all');
+  if (hasFeatures(allBldgs)) {
+    L.geoJSON(allBldgs, {
+      pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+        radius: 4, color: '#aaa', weight: 1, fillColor: '#888', fillOpacity: 0.7,
+      }),
+      style: { color: '#aaa', weight: 1, fillColor: '#888', fillOpacity: 0.5 },
+    }).addTo(layers.buildings);
+    setDot('dot-buildings', true);
+  }
+
+  // Exposed buildings
+  layers.exposed.clearLayers();
+  const exposedBldgs = await fetchJSON('/api/buildings/exposed');
+  if (hasFeatures(exposedBldgs)) {
+    L.geoJSON(exposedBldgs, {
+      pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+        radius: 7, color: '#ff6b35', weight: 2, fillColor: '#ff6b35', fillOpacity: 0.9,
+      }),
+      style: { color: '#ff6b35', weight: 2, fillColor: '#ff6b35', fillOpacity: 0.8 },
+      onEachFeature: (f, layer) => { layer.bindPopup('<b>Exposed Building</b>'); },
+    }).addTo(layers.exposed);
+    setDot('dot-exposed', true);
+  }
+
+  // Ignition
+  layers.ignition.clearLayers();
+  const ignition = await fetchJSON('/api/ignition');
+  if (hasFeatures(ignition)) {
+    ignition.features.forEach(f => {
+      const [lon, lat] = f.geometry.coordinates;
+      L.circleMarker([lat, lon], {
+        radius: 9, color: '#fff', weight: 2, fillColor: '#e94560', fillOpacity: 1,
+      })
+        .bindPopup('<b>Ignition Point</b><br>Cell ID: ' + (f.properties.cell_id || '—'))
+        .addTo(layers.ignition);
+    });
+    setDot('dot-ignition', true);
+  }
+
+  // Summary stats
+  const summary = await fetchJSON('/api/summary');
+  if (summary && summary.total_area_burned_ha !== undefined) {
+    document.getElementById('s-area').textContent =
+      summary.total_area_burned_ha.toFixed(1) + ' ha';
+    document.getElementById('s-acres').textContent =
+      (summary.total_area_burned_acres || (summary.total_area_burned_ha * 2.47).toFixed(1)) + ' ac';
+    document.getElementById('s-structures').textContent = summary.structures_exposed ?? '—';
+    document.getElementById('s-population').textContent = summary.estimated_population_at_risk ?? '—';
+    document.getElementById('s-roads').textContent =
+      summary.infrastructure_exposed?.road_segments ?? '—';
+    const arr = summary.fire_arrival_to_first_structure_hrs;
+    document.getElementById('s-arrival').textContent = arr != null ? arr + ' hrs' : 'N/A';
+  }
+
+  // Weather data for wind indicator
+  weatherData = await fetchJSON('/api/weather').catch(() => []);
+
+  // Animation grids
+  const info = await fetchJSON('/api/grids/');
+  animTotal = info.count;
+  if (animTotal > 0) {
+    animSlider.max   = animTotal - 1;
+    animSlider.value = 0;
+    updateAnimLabel(0);
+    document.getElementById('animation-panel').style.display = '';
+    loadFrame(0);
+  }
+
+  // Raster overlays — cache-bust with timestamp so browser doesn't serve stale PNG
+  const bounds = await fetchJSON('/api/overlay/bounds').catch(() => ({}));
+  if (bounds.south) {
+    const t  = Date.now();
+    const c1 = [bounds.south, bounds.west];
+    const c2 = [bounds.north, bounds.east];
+    if (fuelOverlayLayer) { map.removeLayer(fuelOverlayLayer); layerControl && layerControl.removeLayer(fuelOverlayLayer); }
+    if (elevOverlayLayer) { map.removeLayer(elevOverlayLayer); layerControl && layerControl.removeLayer(elevOverlayLayer); }
+    fuelOverlayLayer = L.imageOverlay(`/api/overlay/fuel.png?t=${t}`,      [c1, c2], { opacity: 0.75, interactive: false });
+    elevOverlayLayer = L.imageOverlay(`/api/overlay/elevation.png?t=${t}`, [c1, c2], { opacity: 0.65, interactive: false });
+    if (layerControl) {
+      layerControl.addOverlay(fuelOverlayLayer, 'Fuel types');
+      layerControl.addOverlay(elevOverlayLayer, 'Elevation');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Animation
 // ---------------------------------------------------------------------------
 const animPanel   = document.getElementById('animation-panel');
@@ -446,10 +874,27 @@ const animLabel   = document.getElementById('anim-label');
 const animCounter = document.getElementById('anim-counter');
 const animPlay    = document.getElementById('anim-play');
 
-const animCache = {};   // keyed by timestep index
+let animCache = {};   // keyed by timestep index
 let animTotal   = 0;
 let animInterval = null;
 let isPlaying   = false;
+let weatherData  = [];  // [{ws, wd}, …] one entry per simulation hour
+
+const windIndicator = document.getElementById('wind-indicator');
+const windArrow     = document.getElementById('wind-arrow');
+const windSpeed     = document.getElementById('wind-speed');
+
+function updateWindIndicator(frameIdx) {
+  const w = weatherData[frameIdx];
+  if (!w) { windIndicator.style.display = 'none'; return; }
+  windIndicator.style.display = '';
+  // WD is meteorological (where wind comes FROM). Rotate arrow to where it blows TO.
+  const rotateDeg = (w.wd + 180) % 360;
+  windArrow.style.transform = `rotate(${rotateDeg}deg)`;
+  windSpeed.textContent = w.ws.toFixed(1) + ' km/h';
+}
+
+fetchJSON('/api/weather').then(rows => { weatherData = rows; }).catch(() => {});
 
 function updateAnimLabel(val) {
   animLabel.textContent   = 'T+' + val + 'hr';
@@ -458,15 +903,21 @@ function updateAnimLabel(val) {
 
 async function loadFrame(idx) {
   if (!animCache[idx]) {
-    const r = await fetch('/api/grids/' + idx);
-    if (!r.ok) return;
-    animCache[idx] = await r.json();
+    try {
+      const r = await fetch('/api/grids/' + idx);
+      if (!r.ok) return;
+      animCache[idx] = await r.json();
+    } catch (err) {
+      console.warn('Frame', idx, 'fetch failed:', err.message);
+      return;
+    }
   }
   layers.animFrame.clearLayers();
   L.geoJSON(animCache[idx], {
     style: { color: '#ff4500', weight: 0, fillColor: '#ff4500', fillOpacity: 0.55 },
   }).addTo(layers.animFrame);
   updateAnimLabel(idx);
+  updateWindIndicator(idx);
 }
 
 function stopPlayback() {
@@ -474,6 +925,8 @@ function stopPlayback() {
   isPlaying = false;
   animPlay.innerHTML = '&#9654; Play';
 }
+
+function hideWindIndicator() { windIndicator.style.display = 'none'; }
 
 animSlider.addEventListener('input', () => {
   stopPlayback();

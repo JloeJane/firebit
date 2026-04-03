@@ -15,7 +15,18 @@
       "Bash(make all:*)",
       "Bash(tee /tmp/full_pipeline.log)",
       "Bash(echo \"Exit code: $?\")",
-      "Bash(make test:*)"
+      "Bash(make test:*)",
+      "Bash(docker stop:*)",
+      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code}\\\\n' -X POST http://localhost:8001/api/run -H 'Content-Type: application/json' -d '{\"bbox_north\":40,\"bbox_south\":35,\"bbox_east\":-80,\"bbox_west\":-90,:*)",
+      "Bash(curl -s -X POST http://localhost:8001/api/run -H 'Content-Type: application/json' -d '{\"bbox_north\":40,\"bbox_south\":35,\"bbox_east\":-80,\"bbox_west\":-90,:*)",
+      "Bash(curl -s -I http://localhost:8001/api/run/status)",
+      "Bash(make ui-dev:*)",
+      "Bash(echo \"Started ui-dev in background \\(PID $!\\)\")",
+      "Bash(curl -s http://localhost:8001/api/grids/)",
+      "Bash(curl -s http://localhost:8001/api/overlay/bounds)",
+      "Bash(curl -sf http://localhost:8001/)",
+      "Bash(git restore:*)",
+      "Bash(git add:*)"
     ]
   }
 }
