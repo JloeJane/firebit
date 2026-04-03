@@ -9,6 +9,11 @@ data/consequence/*
 data/output/*
 
 !data/fuel/.gitkeep
+!data/fuel/cache/
+data/fuel/cache/*.zip
+data/fuel/cache/*.zip.*
+data/fuel/cache/extracted/
+!data/fuel/cache/.gitkeep
 !data/topography/.gitkeep
 !data/weather/.gitkeep
 !data/moisture/.gitkeep

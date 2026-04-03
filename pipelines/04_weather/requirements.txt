@@ -1,1 +1,7 @@
-numpy==2.2.4
+herbie-data
+cfgrib
+eccodes
+xarray
+scipy
+requests
+numpy
