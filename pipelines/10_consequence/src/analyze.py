@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import geopandas as gpd
 import numpy as np
+import requests
 import rasterio
 import rasterio.transform
 from shapely.geometry import shape
@@ -26,6 +27,7 @@ ASSETS_META      = "/data/assets/assets_metadata.json"
 
 CONSEQUENCE_DIR  = "/data/consequence"
 OUTPUT_DIR       = "/data/output"
+AOI_METADATA     = "/data/input/aoi_metadata.json"
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +67,89 @@ def xy_to_rowcol(x, y, meta):
 
 
 # ---------------------------------------------------------------------------
+# NSI valuation
+# ---------------------------------------------------------------------------
+
+def fetch_nsi_values(bbox_4326: dict) -> gpd.GeoDataFrame:
+    """Fetch structure values from the FEMA National Structure Inventory API."""
+    url = "https://nsi.sec.usace.army.mil/nsiapi/structures"
+    params = {
+        "bbox": f"{bbox_4326['west']},{bbox_4326['south']},{bbox_4326['east']},{bbox_4326['north']}",
+        "fmt": "fc",
+    }
+    empty = gpd.GeoDataFrame()
+    try:
+        resp = requests.get(url, params=params, timeout=30)
+        resp.raise_for_status()
+        fc = resp.json()
+        gdf = gpd.GeoDataFrame.from_features(fc["features"], crs="EPSG:4326")
+        gdf = gdf.to_crs("EPSG:5070")
+        keep = ["geometry"] + [c for c in ["val_struct", "val_cont", "occtype", "sqft"]
+                               if c in gdf.columns]
+        gdf = gdf[keep]
+        print(f"NSI: fetched {len(gdf)} structures")
+        return gdf
+    except requests.exceptions.Timeout:
+        print("WARNING: NSI API timed out — using fallback values")
+        return empty
+    except Exception as e:
+        print(f"WARNING: NSI API failed ({e}) — using fallback values")
+        return empty
+
+
+def assign_building_values(buildings_gdf: gpd.GeoDataFrame,
+                           nsi_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Enrich buildings with estimated replacement values from NSI or sqft fallback."""
+    gdf = buildings_gdf.copy().reset_index(drop=True)
+
+    def _fallback_sqft(geom):
+        area = geom.area  # m² in EPSG:5070
+        return area * 10.764 if area > 0 else 1200.0
+
+    if len(nsi_gdf) == 0:
+        sqfts = np.array([_fallback_sqft(g) for g in gdf.geometry])
+        gdf["structure_sqft"]      = sqfts
+        gdf["estimated_value_usd"] = (sqfts * 175).astype(int)
+        gdf["occupancy_type"]      = "RES1-ESTIMATED"
+        return gdf
+
+    assert gdf.crs.to_epsg() == nsi_gdf.crs.to_epsg(), \
+        f"CRS mismatch: {gdf.crs} vs {nsi_gdf.crs}"
+
+    nsi_join_cols = ["geometry"] + [c for c in ["val_struct", "occtype", "sqft"]
+                                    if c in nsi_gdf.columns]
+    merged = gpd.sjoin_nearest(gdf, nsi_gdf[nsi_join_cols], max_distance=50, how="left")
+    merged = merged[~merged.index.duplicated(keep="first")].reset_index(drop=True)
+
+    matched = merged["val_struct"].notna() if "val_struct" in merged.columns \
+              else np.zeros(len(merged), dtype=bool)
+
+    # Default all to fallback, then override where NSI matched
+    fallback_sqfts = np.array([_fallback_sqft(g) for g in merged.geometry])
+    merged["structure_sqft"]      = fallback_sqfts
+    merged["estimated_value_usd"] = (fallback_sqfts * 175).astype(int)
+    merged["occupancy_type"]      = "RES1-ESTIMATED"
+
+    if "sqft" in merged.columns:
+        valid = matched & merged["sqft"].notna()
+        merged.loc[valid, "structure_sqft"] = merged.loc[valid, "sqft"]
+        # Recalculate value for those rows using updated sqft (will be overwritten by val_struct below)
+        merged.loc[valid, "estimated_value_usd"] = (merged.loc[valid, "structure_sqft"] * 175).astype(int)
+
+    if "val_struct" in merged.columns:
+        valid = matched & merged["val_struct"].notna()
+        merged.loc[valid, "estimated_value_usd"] = merged.loc[valid, "val_struct"].astype(int)
+
+    if "occtype" in merged.columns:
+        valid = matched & merged["occtype"].notna()
+        merged.loc[valid, "occupancy_type"] = merged.loc[valid, "occtype"]
+
+    drop_cols = [c for c in ["index_right", "val_struct", "val_cont", "occtype", "sqft"]
+                 if c in merged.columns]
+    return merged.drop(columns=drop_cols)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -96,6 +181,13 @@ def main():
     elif buildings_gdf.crs.to_string() != "EPSG:5070":
         buildings_gdf = buildings_gdf.to_crs("EPSG:5070")
     print(f"Buildings loaded: {len(buildings_gdf)}")
+
+    # --- Fetch NSI values and enrich all buildings ---
+    bbox_4326 = load_json(AOI_METADATA).get("bbox_4326", {})
+    nsi_gdf = fetch_nsi_values(bbox_4326)
+    buildings_gdf = assign_building_values(buildings_gdf, nsi_gdf)
+    buildings_gdf.to_file(BUILDINGS_GJ, driver="GeoJSON")
+    print(f"Enriched {len(buildings_gdf)} buildings with value estimates")
 
     # --- Building exposure: intersects or within fire perimeter ---
     exposed_mask = buildings_gdf.geometry.intersects(fire_union)
@@ -165,6 +257,16 @@ def main():
     exposed_gdf.to_file(exposed_path, driver="GeoJSON")
     print(f"Saved exposed buildings → {exposed_path}")
 
+    # --- NSI loss stats ---
+    nsi_match_count = int((exposed_gdf["occupancy_type"] != "RES1-ESTIMATED").sum()) \
+                      if "occupancy_type" in exposed_gdf.columns else 0
+    total_loss_usd  = int(exposed_gdf["estimated_value_usd"].sum()) \
+                      if "estimated_value_usd" in exposed_gdf.columns else 0
+    avg_value_usd   = int(round(buildings_gdf["estimated_value_usd"].mean())) \
+                      if "estimated_value_usd" in buildings_gdf.columns else 0
+    nsi_source      = "FEMA NSI" if nsi_match_count > 0 else "estimated"
+    print(f"Total estimated loss: ${total_loss_usd:,}  (NSI matches: {nsi_match_count}, source: {nsi_source})")
+
     # --- Write consequence summary ---
     summary = {
         "total_area_burned_ha":              total_area_ha,
@@ -176,6 +278,10 @@ def main():
             "power_line_segments": power_count,
         },
         "fire_arrival_to_first_structure_hrs": fire_arrival_hrs,
+        "total_estimated_loss_usd":          total_loss_usd,
+        "avg_structure_value_usd":           avg_value_usd,
+        "nsi_match_count":                   nsi_match_count,
+        "nsi_source":                        nsi_source,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     summary_path = os.path.join(CONSEQUENCE_DIR, "consequence_summary.json")
