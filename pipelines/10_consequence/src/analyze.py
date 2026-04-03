@@ -203,7 +203,10 @@ def main():
         elif pop_gdf.crs.to_string() != "EPSG:5070":
             pop_gdf = pop_gdf.to_crs("EPSG:5070")
         exposed_pop_mask = pop_gdf.geometry.intersects(fire_union)
-        pop_at_risk = round(float(pop_gdf[exposed_pop_mask]["estimated_pop"].sum()), 1)
+        if "estimated_pop" in pop_gdf.columns:
+            pop_at_risk = round(float(pop_gdf[exposed_pop_mask]["estimated_pop"].sum()), 1)
+        else:
+            pop_at_risk = round(int(exposed_pop_mask.sum()) * 2.3, 1)
     else:
         # Fall back to 2.3 per exposed building
         pop_at_risk = round(len(exposed_gdf) * 2.3, 1)
@@ -262,8 +265,9 @@ def main():
                       if "occupancy_type" in exposed_gdf.columns else 0
     total_loss_usd  = int(exposed_gdf["estimated_value_usd"].sum()) \
                       if "estimated_value_usd" in exposed_gdf.columns else 0
-    avg_value_usd   = int(round(buildings_gdf["estimated_value_usd"].mean())) \
-                      if "estimated_value_usd" in buildings_gdf.columns else 0
+    _avg = buildings_gdf["estimated_value_usd"].mean() \
+           if "estimated_value_usd" in buildings_gdf.columns else 0
+    avg_value_usd = int(round(_avg)) if _avg == _avg else 0  # guard NaN
     nsi_source      = "FEMA NSI" if nsi_match_count > 0 else "estimated"
     print(f"Total estimated loss: ${total_loss_usd:,}  (NSI matches: {nsi_match_count}, source: {nsi_source})")
 

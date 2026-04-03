@@ -1,8 +1,14 @@
+import csv
 import io
 import json
 import os
+import queue
+import shutil
+import threading
+import time
 from pathlib import Path
 
+import docker as docker_sdk
 import geopandas as gpd
 import matplotlib.cm as cm
 import numpy as np
@@ -13,8 +19,9 @@ from pyproj import Transformer
 from shapely.geometry import shape
 from shapely.ops import unary_union
 from PIL import Image
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi import Body, FastAPI
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel
 
 app = FastAPI(title="Wildfire Platform")
 
@@ -34,6 +41,13 @@ FUEL_TIF         = Path("/data/fuel/fuel_clipped.tif")
 ELEVATION_TIF    = Path("/data/topography/elevation.tif")
 AOI_METADATA     = "/data/input/aoi_metadata.json"
 
+HOST_DATA_DIR = os.environ.get("HOST_DATA_DIR", "/data")
+
+# Run state — written by background thread, read by SSE endpoint
+_run_lock   = threading.Lock()
+_run_events: queue.Queue = queue.Queue()
+_run_cancel = threading.Event()
+
 # ---------------------------------------------------------------------------
 # Timestep helpers — lazy-loaded on first request
 # ---------------------------------------------------------------------------
@@ -46,25 +60,32 @@ def _tif_list() -> list[Path]:
 
 
 def _vectorize_tif(tif_path: Path) -> list[dict]:
-    """Read a burned-cell GeoTIFF and return WGS84 GeoJSON features."""
-    features = []
+    """Read a burned-cell GeoTIFF, dissolve into one multipolygon, reproject to WGS84."""
     with rasterio.open(tif_path) as src:
         band = src.read(1).astype(np.uint8)
         mask = (band == 1).astype(np.uint8)
-        for geom_dict, val in rasterio_shapes(mask, transform=src.transform):
-            if val != 1:
-                continue
-            coords = geom_dict["coordinates"]
-            reprojected = []
-            for ring in coords:
-                new_ring = [list(_TRANSFORMER.transform(x, y)) for x, y in ring]
-                reprojected.append(new_ring)
-            features.append({
-                "type": "Feature",
-                "geometry": {"type": geom_dict["type"], "coordinates": reprojected},
-                "properties": {},
-            })
-    return features
+        if not mask.any():
+            return []
+        raw_shapes = [
+            shape(geom) for geom, val in rasterio_shapes(mask, transform=src.transform)
+            if val == 1
+        ]
+        if not raw_shapes:
+            return []
+        dissolved = unary_union(raw_shapes)
+    # reproject the dissolved geometry to WGS84
+    dissolved_wgs84 = _reproject_shape(dissolved)
+    geom_json = dissolved_wgs84.__geo_interface__
+    return [{"type": "Feature", "geometry": geom_json, "properties": {}}]
+
+
+def _reproject_shape(geom):
+    """Reproject a shapely geometry from EPSG:5070 to WGS84 in one pass."""
+    import shapely.ops
+    return shapely.ops.transform(
+        lambda x, y: _TRANSFORMER.transform(x, y),
+        geom,
+    )
 
 
 def _load_timestep(idx: int) -> dict:
@@ -238,6 +259,106 @@ generate_overlays()
 
 
 # ---------------------------------------------------------------------------
+# Pipeline runner
+# ---------------------------------------------------------------------------
+
+def _clear_data_dirs() -> None:
+    """Delete pipeline outputs before a fresh run. Preserve data/fuel/cache/."""
+    dirs_to_clear = [
+        "/data/input", "/data/topography", "/data/weather", "/data/moisture",
+        "/data/assets", "/data/grid", "/data/simulation", "/data/consequence", "/data/output",
+    ]
+    for d in dirs_to_clear:
+        p = Path(d)
+        if p.exists():
+            shutil.rmtree(p)
+        p.mkdir(parents=True, exist_ok=True)
+    # Clear fuel except cache/
+    fuel = Path("/data/fuel")
+    if fuel.exists():
+        for item in fuel.iterdir():
+            if item.name != "cache":
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+
+
+def _run_pipeline(client, image_tag: str, env_vars: dict) -> None:
+    """Build and run one pipeline container. Raises on non-zero exit."""
+    pipeline_name = image_tag.replace("wildfire-", "")
+    build_path = str(Path(__file__).parent.parent.parent / "pipelines" / pipeline_name)
+    print(f"DEBUG: build_path = {build_path}")   # verify on first run
+    if Path(build_path).exists():
+        client.images.build(path=build_path, tag=image_tag, rm=True)
+    client.containers.run(
+        image_tag,
+        remove=True,
+        volumes={HOST_DATA_DIR: {"bind": "/data", "mode": "rw"}},
+        environment=env_vars,
+    )
+
+
+class ScenarioRequest(BaseModel):
+    bbox_north:    float
+    bbox_south:    float
+    bbox_east:     float
+    bbox_west:     float
+    weather_date:  str    # "YYYY-MM-DD"
+    ignition_lat:  float
+    ignition_lon:  float
+
+
+PIPELINE_SEQUENCE = [
+    ("01_shapefile_ingestion", "AOI boundary"),
+    ("03_topography",          "Topography (3DEP)"),
+    ("02_fuel",                "Fuel data (LANDFIRE)"),
+    ("04_weather",             "Weather (HRRR)"),
+    ("05_fuel_moisture",       "Fuel moisture"),
+    ("06_assets",              "Assets (OSM)"),
+    ("07_grid_assembly",       "Grid assembly"),
+    ("08_ignition",            "Ignition point"),
+    ("09_cell2fire",           "Fire simulation (C2F-W)"),
+    ("10_consequence",         "Consequence analysis"),
+]
+
+
+def _pipeline_runner(req: ScenarioRequest) -> None:
+    global TIMESTEP_CACHE, FUEL_OVERLAY_PNG, ELEVATION_OVERLAY_PNG
+    env_vars = {
+        "BBOX_NORTH":   str(req.bbox_north),
+        "BBOX_SOUTH":   str(req.bbox_south),
+        "BBOX_EAST":    str(req.bbox_east),
+        "BBOX_WEST":    str(req.bbox_west),
+        "WEATHER_DATE": req.weather_date,
+        "IGNITION_LAT": str(req.ignition_lat),
+        "IGNITION_LON": str(req.ignition_lon),
+    }
+    try:
+        client = docker_sdk.from_env()
+        _clear_data_dirs()
+        for pipeline_id, display_name in PIPELINE_SEQUENCE:
+            if _run_cancel.is_set():
+                _run_events.put({"type": "cancelled", "step": display_name})
+                return
+            _run_events.put({"type": "step_start", "step": display_name})
+            try:
+                _run_pipeline(client, f"wildfire-{pipeline_id}", env_vars)
+                _run_events.put({"type": "step_done", "step": display_name})
+            except Exception as e:
+                _run_events.put({"type": "error", "step": display_name, "message": str(e)})
+                return
+        # Invalidate caches so the reloaded map gets fresh data
+        TIMESTEP_CACHE.clear()
+        FUEL_OVERLAY_PNG = None
+        ELEVATION_OVERLAY_PNG = None
+        generate_overlays()
+        _run_events.put({"type": "complete"})
+    finally:
+        _run_lock.release()
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -360,6 +481,21 @@ async def get_overlay_bounds():
     })
 
 
+@app.get("/api/weather")
+async def get_weather():
+    path = "/data/grid/Weather.csv"
+    if not os.path.exists(path):
+        return JSONResponse([])
+    rows = []
+    with open(path, newline="") as f:
+        for r in csv.DictReader(f):
+            try:
+                rows.append({"ws": float(r["WS"]), "wd": float(r["WD"])})
+            except (KeyError, ValueError):
+                pass
+    return JSONResponse(rows)
+
+
 @app.get("/api/grids/")
 async def get_grids_list():
     tifs = _tif_list()
@@ -372,3 +508,40 @@ async def get_grid_timestep(timestep: int):
     if timestep < 0 or timestep >= len(tifs):
         return JSONResponse({"detail": "timestep not found"}, status_code=404)
     return JSONResponse(_load_timestep(timestep))
+
+
+@app.post("/api/run", status_code=202)
+async def run_scenario(req: ScenarioRequest):
+    width  = abs(req.bbox_east  - req.bbox_west)
+    height = abs(req.bbox_north - req.bbox_south)
+    if not (0.05 <= width  <= 2.0):
+        return JSONResponse({"detail": f"bbox width {width:.3f}° must be 0.05–2.0°"}, status_code=422)
+    if not (0.05 <= height <= 2.0):
+        return JSONResponse({"detail": f"bbox height {height:.3f}° must be 0.05–2.0°"}, status_code=422)
+    if not _run_lock.acquire(blocking=False):
+        return JSONResponse({"detail": "run already in progress"}, status_code=409)
+    _run_cancel.clear()
+    while not _run_events.empty():
+        _run_events.get_nowait()
+    threading.Thread(target=_pipeline_runner, args=(req,), daemon=True).start()
+    return {"status": "started"}
+
+
+@app.get("/api/run/status")
+async def run_status():
+    def event_stream():
+        while True:
+            try:
+                event = _run_events.get(timeout=30)
+                yield f"data: {json.dumps(event)}\n\n"
+                if event["type"] in ("complete", "error", "cancelled"):
+                    break
+            except queue.Empty:
+                yield 'data: {"type": "ping"}\n\n'
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/run/cancel")
+async def cancel_run():
+    _run_cancel.set()
+    return {"status": "cancelling"}
