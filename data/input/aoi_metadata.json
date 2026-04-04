@@ -1,22 +1,22 @@
 {
   "bbox_4326": {
-    "north": 35.766582,
-    "south": 35.616048,
-    "east": -83.084333,
-    "west": -83.371293
+    "north": 35.65,
+    "south": 35.55,
+    "east": -83.7,
+    "west": -83.83
   },
   "bbox_5070": {
-    "xmin": 1128385.17,
-    "ymin": 1470981.05,
-    "xmax": 1156152.37,
-    "ymax": 1491131.36
+    "xmin": 1089294.78,
+    "ymin": 1458288.99,
+    "xmax": 1102310.81,
+    "ymax": 1470890.09
   },
-  "area_sq_mi": 167.5,
-  "area_ha": 43381.9,
-  "grid_rows": 672,
-  "grid_cols": 926,
+  "area_sq_mi": 50.46,
+  "area_ha": 13070.3,
+  "grid_rows": 421,
+  "grid_cols": 434,
   "resolution_m": 30,
   "crs_projected": "EPSG:5070",
   "crs_geographic": "EPSG:4326",
-  "generated_at": "2026-04-03T20:12:01.325053+00:00"
+  "generated_at": "2026-04-03T23:05:24.415568+00:00"
 }
