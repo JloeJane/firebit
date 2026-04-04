@@ -26,7 +26,8 @@
       "Bash(curl -s http://localhost:8001/api/overlay/bounds)",
       "Bash(curl -sf http://localhost:8001/)",
       "Bash(git restore:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(head -5 pipelines/03_topography/src/*.py)"
     ]
   }
 }
