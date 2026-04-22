@@ -1,9 +1,15 @@
 """
-Fuel Pipeline — fetches LANDFIRE FBFM40 fuel model data for the AOI
-via the LANDFIRE Product Service v2 REST API.
+Fuel Pipeline — fetches LANDFIRE fuel and canopy layers for the AOI
+via the LANDFIRE Product Service v2 REST API (one job per layer).
+
+Outputs (all EPSG:5070, 30m, aligned to AOI grid):
+  fuel/fbfm40.tif  — Scott & Burgan 40 fuel model codes (int16)
+  fuel/cc.tif      — canopy cover, percent (int16)
+  fuel/ch.tif      — canopy height, 10×meters (int16)
+  fuel/cbh.tif     — canopy base height, 10×meters (int16)
+  fuel/cbd.tif     — canopy bulk density, 100×kg/m³ (int16)
 """
 
-import csv
 import hashlib
 import json
 import os
@@ -20,27 +26,24 @@ from rasterio.enums import Resampling
 from rasterio.transform import from_bounds
 from rasterio.warp import reproject
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-META_JSON  = "/data/input/aoi_metadata.json"
-FUEL_DIR   = "/data/fuel"
-CACHE_DIR  = "/data/fuel/cache"
-FUEL_TIF   = os.path.join(FUEL_DIR, "fuel_clipped.tif")
-FUEL_CSV   = os.path.join(FUEL_DIR, "fuel_model_grid.csv")
-FUEL_META  = os.path.join(FUEL_DIR, "fuel_metadata.json")
+META_JSON = "/data/input/aoi_metadata.json"
+FUEL_DIR  = "/data/fuel"
+CACHE_DIR = "/data/fuel/cache"
+FUEL_META = os.path.join(FUEL_DIR, "fuel_metadata.json")
 
-# LANDFIRE Product Service v2
 LFPS_SUBMIT = "https://lfps.usgs.gov/api/job/submit"
 LFPS_STATUS = "https://lfps.usgs.gov/api/job/status"
-LFPS_LAYER  = "LF2022_FBFM40"
 LFPS_EMAIL  = os.environ.get("LANDFIRE_EMAIL", "pipeline@noreply.invalid")
 
-SOURCE_LABEL = "LANDFIRE FBFM40 2022 (LF2022) via LFPS v2 API"
+# One LFPS job per layer (API does not support multi-layer requests)
+LAYERS = {
+    "LF2022_FBFM40": "fbfm40.tif",
+    "LF2022_CC":     "cc.tif",
+    "LF2022_CH":     "ch.tif",
+    "LF2022_CBH":    "cbh.tif",
+    "LF2022_CBD":    "cbd.tif",
+}
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def load_aoi():
     with open(META_JSON) as f:
@@ -56,75 +59,10 @@ def dst_transform_and_crs(aoi):
     return transform, CRS.from_epsg(5070)
 
 
-def save_fuel_tif(data, transform, crs, rows, cols, source_label):
-    """Write fuel_clipped.tif with exact grid alignment."""
-    profile = {
-        "driver":    "GTiff",
-        "dtype":     "int16",
-        "width":     cols,
-        "height":    rows,
-        "count":     1,
-        "crs":       crs,
-        "transform": transform,
-        "nodata":    -9999,
-        "compress":  "lzw",
-    }
-    os.makedirs(FUEL_DIR, exist_ok=True)
-    with rasterio.open(FUEL_TIF, "w", **profile) as dst:
-        dst.write(data.astype(np.int16), 1)
-    print(f"  Saved fuel_clipped.tif  ({rows}×{cols}, {source_label})")
-
-
-def write_csv_and_metadata(data, rows, cols, source_label):
-    """Write fuel_model_grid.csv and fuel_metadata.json."""
-    print("  Writing fuel_model_grid.csv...")
-    with open(FUEL_CSV, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["row", "col", "fuel_code"])
-        for r in range(rows):
-            for c in range(cols):
-                code = int(data[r, c])
-                if code > 0:
-                    writer.writerow([r, c, code])
-
-    valid = data[data > 0]
-    total = data.size
-    nodata_pct = round((data <= 0).sum() / total * 100, 2)
-    unique_codes = sorted(int(x) for x in np.unique(valid))
-    distribution = {
-        str(code): round(float((valid == code).sum() / total * 100), 3)
-        for code in unique_codes
-    }
-
-    metadata = {
-        "unique_fuel_codes":  unique_codes,
-        "fuel_distribution":  distribution,
-        "nodata_percentage":  nodata_pct,
-        "rows":               rows,
-        "cols":               cols,
-        "source":             source_label,
-        "generated_at":       datetime.now(timezone.utc).isoformat(),
-    }
-    with open(FUEL_META, "w") as f:
-        json.dump(metadata, f, indent=2)
-
-    print()
-    print("=== Fuel Model Summary ===")
-    print(f"  Source:       {source_label}")
-    print(f"  Grid:         {rows} rows × {cols} cols")
-    print(f"  Nodata:       {nodata_pct:.1f}%")
-    print(f"  Fuel codes ({len(unique_codes)}):  {unique_codes}")
-    for code, pct in distribution.items():
-        print(f"    code {code:>4}: {pct:.1f}%")
-    print("==========================")
-
-
-def reproject_fuel_raw(raw_tif, transform, crs, rows, cols):
-    """Reproject raw fuel raster to exact AOI grid using nearest-neighbor."""
+def reproject_layer(raw_tif, transform, crs, rows, cols):
     with rasterio.open(raw_tif) as src:
         src_crs = src.crs or CRS.from_epsg(5070)
-        print(f"  Raw fuel CRS: {src_crs}  size: {src.width}×{src.height}")
-
+        print(f"    Source CRS: {src_crs}  size: {src.width}×{src.height}")
         dst_array = np.full((rows, cols), -9999, dtype=np.int16)
         reproject(
             source=rasterio.band(src, 1),
@@ -140,30 +78,36 @@ def reproject_fuel_raw(raw_tif, transform, crs, rows, cols):
     return dst_array
 
 
-# ---------------------------------------------------------------------------
-# LFPS v2 API
-# ---------------------------------------------------------------------------
-
-def lfps_submit(bbox_str):
-    """Submit LFPS v2 job. Returns jobId string."""
-    params = {
-        "Layer_List":        LFPS_LAYER,
-        "Area_of_Interest":  bbox_str,
-        "Email":             LFPS_EMAIL,
+def save_layer(data, out_path, transform, crs):
+    profile = {
+        "driver":    "GTiff",
+        "dtype":     "int16",
+        "width":     data.shape[1],
+        "height":    data.shape[0],
+        "count":     1,
+        "crs":       crs,
+        "transform": transform,
+        "nodata":    -9999,
+        "compress":  "lzw",
     }
-    print(f"  Submitting LFPS v2 job (layer={LFPS_LAYER})...")
-    resp = requests.get(LFPS_SUBMIT, params=params, timeout=30)
+    with rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(data, 1)
+
+
+def lfps_submit(layer_code, bbox_str):
+    resp = requests.get(
+        LFPS_SUBMIT,
+        params={"Layer_List": layer_code, "Area_of_Interest": bbox_str, "Email": LFPS_EMAIL},
+        timeout=30,
+    )
     resp.raise_for_status()
     body = resp.json()
     if "jobId" not in body:
-        raise RuntimeError(f"LFPS submit: no jobId in response: {body}")
-    job_id = body["jobId"]
-    print(f"  Job ID: {job_id}")
-    return job_id
+        raise RuntimeError(f"LFPS submit ({layer_code}): no jobId: {body}")
+    return body["jobId"]
 
 
-def lfps_poll(job_id, max_wait=600, interval=10):
-    """Poll until job succeeds. Returns outputFile URL."""
+def lfps_poll(job_id, layer_code, max_wait=900, interval=15):
     elapsed = 0
     while elapsed < max_wait:
         resp = requests.get(
@@ -175,38 +119,57 @@ def lfps_poll(job_id, max_wait=600, interval=10):
         resp.raise_for_status()
         body = resp.json()
         status = body.get("status", "")
-        print(f"  LFPS status: {status}  ({elapsed}s elapsed)")
-
+        print(f"  [{layer_code}] status: {status}  ({elapsed}s)")
         if "Succeeded" in status:
             url = body.get("outputFile")
             if not url:
-                raise RuntimeError(f"Job succeeded but outputFile is missing: {body}")
+                raise RuntimeError(f"Job succeeded but outputFile missing: {body}")
             return url
-
         if "Failed" in status:
-            messages = body.get("messages", [])
-            raise RuntimeError(f"LFPS job failed: {messages}")
-
+            raise RuntimeError(f"LFPS job failed ({layer_code}): {body.get('messages', [])}")
         time.sleep(interval)
         elapsed += interval
+    raise TimeoutError(f"LFPS job timed out after {max_wait}s ({layer_code})")
 
-    raise TimeoutError(f"LFPS job did not complete within {max_wait}s")
 
-
-def lfps_download(download_url, cache_zip):
-    """Download the output zip to cache_zip."""
-    print(f"  Downloading: {download_url}")
-    resp = requests.get(download_url, timeout=300, stream=True)
+def lfps_download(url, cache_zip):
+    resp = requests.get(url, timeout=600, stream=True)
     resp.raise_for_status()
     with open(cache_zip, "wb") as f:
         for chunk in resp.iter_content(chunk_size=1024 * 1024):
             f.write(chunk)
-    print(f"  Cached: {cache_zip}  ({os.path.getsize(cache_zip) / 1024:.0f} KB)")
+    print(f"    Cached: {cache_zip}  ({os.path.getsize(cache_zip) / 1024:.0f} KB)")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+def find_layer_tif(extract_dir):
+    """Return the first .tif found in extract_dir (one layer per zip)."""
+    tifs = list(Path(extract_dir).rglob("*.tif"))
+    if not tifs:
+        raise FileNotFoundError(f"No .tif in {extract_dir}: {list(Path(extract_dir).rglob('*'))}")
+    return str(tifs[0])
+
+
+def fetch_layer(layer_code, bbox_str, bbox_hash):
+    """Download one LANDFIRE layer, using cache if available. Returns path to raw .tif."""
+    cache_zip = os.path.join(CACHE_DIR, f"landfire_{layer_code.lower()}_{bbox_hash}.zip")
+    extract_dir = os.path.join(CACHE_DIR, f"extracted_{layer_code.lower()}_{bbox_hash}")
+
+    if os.path.exists(cache_zip):
+        print(f"  [{layer_code}] Using cache: {cache_zip}")
+    else:
+        print(f"  [{layer_code}] Submitting LFPS job...")
+        job_id = lfps_submit(layer_code, bbox_str)
+        print(f"  [{layer_code}] Job ID: {job_id}")
+        url = lfps_poll(job_id, layer_code)
+        print(f"  [{layer_code}] Downloading...")
+        lfps_download(url, cache_zip)
+
+    os.makedirs(extract_dir, exist_ok=True)
+    with zipfile.ZipFile(cache_zip) as zf:
+        zf.extractall(extract_dir)
+
+    return find_layer_tif(extract_dir)
+
 
 def main():
     print("=== Step 2: Fuel Pipeline ===")
@@ -214,49 +177,47 @@ def main():
     os.makedirs(CACHE_DIR, exist_ok=True)
 
     aoi = load_aoi()
-    bbox_4326 = aoi["bbox_4326"]
-    rows      = aoi["grid_rows"]
-    cols      = aoi["grid_cols"]
+    rows, cols = aoi["grid_rows"], aoi["grid_cols"]
     transform, crs = dst_transform_and_crs(aoi)
 
-    w = bbox_4326["west"]
-    s = bbox_4326["south"]
-    e = bbox_4326["east"]
-    n = bbox_4326["north"]
-
+    b = aoi["bbox_4326"]
+    w, s, e, n = b["west"], b["south"], b["east"], b["north"]
     bbox_str  = f"{w} {s} {e} {n}"
-    rounded   = f"{round(w,4)} {round(s,4)} {round(e,4)} {round(n,4)}"
-    bbox_hash = hashlib.md5(rounded.encode()).hexdigest()[:8]
-    cache_zip = os.path.join(CACHE_DIR, f"landfire_lf2022fbfm40_{bbox_hash}.zip")
+    bbox_hash = hashlib.md5(f"{round(w,4)} {round(s,4)} {round(e,4)} {round(n,4)}".encode()).hexdigest()[:8]
 
-    # --- Check cache ---
-    if os.path.exists(cache_zip):
-        print(f"Using cached LANDFIRE tile: {cache_zip}")
-    else:
-        print("Downloading LANDFIRE FBFM40 via LFPS v2 API...")
-        job_id = lfps_submit(bbox_str)
-        download_url = lfps_poll(job_id)
-        lfps_download(download_url, cache_zip)
+    print(f"AOI: {bbox_str}")
+    print(f"Grid: {rows}×{cols} at 30m  |  Fetching {len(LAYERS)} LANDFIRE layers\n")
 
-    # --- Unzip and locate GeoTIFF ---
-    extract_dir = os.path.join(CACHE_DIR, f"extracted_{bbox_hash}")
-    os.makedirs(extract_dir, exist_ok=True)
-    with zipfile.ZipFile(cache_zip) as zf:
-        zf.extractall(extract_dir)
+    layer_stats = {}
+    for layer_code, out_name in LAYERS.items():
+        print(f"\n--- {layer_code} → {out_name} ---")
+        raw_tif = fetch_layer(layer_code, bbox_str, bbox_hash)
+        print(f"    Raw TIF: {Path(raw_tif).name}")
+        data = reproject_layer(raw_tif, transform, crs, rows, cols)
+        out_path = os.path.join(FUEL_DIR, out_name)
+        save_layer(data, out_path, transform, crs)
+        valid = data[data != -9999]
+        vmin = int(valid.min()) if len(valid) else None
+        vmax = int(valid.max()) if len(valid) else None
+        nodata = int((data == -9999).sum())
+        print(f"    Saved {out_name}  range: [{vmin}, {vmax}]  nodata: {nodata} cells")
+        layer_stats[out_name] = {"min": vmin, "max": vmax, "nodata_cells": nodata}
 
-    tif_files = list(Path(extract_dir).rglob("*.tif"))
-    assert tif_files, f"No .tif found in zip: {list(Path(extract_dir).rglob('*'))}"
-    raw_tif = str(tif_files[0])
-    print(f"  Raw GeoTIFF: {raw_tif}")
+    metadata = {
+        "layers": layer_stats,
+        "grid_rows": rows,
+        "grid_cols": cols,
+        "crs": "EPSG:5070",
+        "resolution_m": 30,
+        "source": "LANDFIRE 2022 via LFPS v2 API",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with open(FUEL_META, "w") as f:
+        json.dump(metadata, f, indent=2)
 
-    # --- Reproject to AOI grid ---
-    print("  Reprojecting to AOI grid (EPSG:5070)...")
-    fuel_data = reproject_fuel_raw(raw_tif, transform, crs, rows, cols)
-
-    # --- Save outputs ---
-    print("\nSaving outputs...")
-    save_fuel_tif(fuel_data, transform, crs, rows, cols, SOURCE_LABEL)
-    write_csv_and_metadata(fuel_data, rows, cols, SOURCE_LABEL)
+    print("\n=== Fuel Pipeline Complete ===")
+    for name, stats in layer_stats.items():
+        print(f"  {name}: [{stats['min']}, {stats['max']}]")
 
 
 if __name__ == "__main__":
