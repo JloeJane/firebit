@@ -27,7 +27,10 @@
       "Bash(curl -sf http://localhost:8001/)",
       "Bash(git restore:*)",
       "Bash(git add:*)",
-      "Bash(head -5 pipelines/03_topography/src/*.py)"
+      "Bash(head -5 pipelines/03_topography/src/*.py)",
+      "Bash(git -C /home/loejane/logicprojects/firebit log --oneline elm2fire..main)",
+      "Bash(git -C /home/loejane/logicprojects/firebit log --oneline --all)",
+      "Bash(git *)"
     ]
   }
 }

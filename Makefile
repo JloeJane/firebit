@@ -1,9 +1,18 @@
-.PHONY: all clean test build run-01 run-02 run-03 run-04 run-05 run-06 run-07 run-08 run-09 run-10 ui ui-dev
+.PHONY: all clean test build run-01 run-02 run-03 run-04 run-04b run-05 run-06 run-07 run-08 run-09 run-10 run-sim run-sim-c2fsb all-elmfire all-c2fsb ui ui-dev
 
 DOCKER_RUN = docker run --rm --env-file .env -v $(PWD)/data:/data
 
+# Engine selection (default: elmfire)
+ENGINE ?= elmfire
+
 all: run-01 run-03 run-02 run-04 run-05 run-06 run-07 run-08 run-09 run-10
-	@echo "=== Full pipeline complete ==="
+	@echo "=== Full pipeline complete (C2FSB) ==="
+
+all-elmfire: run-01 run-02 run-03 run-04 run-04b run-05 run-06 run-07 run-08 run-sim run-10
+	@echo "=== Full ELMFIRE pipeline complete ==="
+
+all-c2fsb: run-01 run-02 run-03 run-04 run-05 run-06 run-07 run-08 run-sim-c2fsb run-10
+	@echo "=== Full C2FSB pipeline complete ==="
 
 build-%:
 	docker build -t wildfire-$* pipelines/$*
@@ -23,6 +32,23 @@ run-03: build-03_topography
 run-04: build-04_weather
 	@echo "=== Step 4: Weather Pipeline ==="
 	$(DOCKER_RUN) wildfire-04_weather
+
+run-04b: build-04b_windninja
+	@echo "=== Step 4b: WindNinja Wind Fields ==="
+	$(DOCKER_RUN) wildfire-04b_windninja
+
+run-sim:
+ifeq ($(ENGINE),elmfire)
+	@echo "=== Simulation: ELMFIRE ==="
+	$(DOCKER_RUN) wildfire-09_elmfire
+else
+	@echo "=== Simulation: C2FSB ==="
+	$(DOCKER_RUN) wildfire-09_cell2fire
+endif
+
+run-sim-c2fsb:
+	@echo "=== Simulation: C2FSB ==="
+	$(DOCKER_RUN) wildfire-09_cell2fire
 
 run-05: build-05_fuel_moisture
 	@echo "=== Step 5: Fuel Moisture Pipeline ==="
