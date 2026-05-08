@@ -30,7 +30,10 @@
       "Bash(head -5 pipelines/03_topography/src/*.py)",
       "Bash(git -C /home/loejane/logicprojects/firebit log --oneline elm2fire..main)",
       "Bash(git -C /home/loejane/logicprojects/firebit log --oneline --all)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "WebFetch(domain:hub.docker.com)",
+      "WebFetch(domain:weather.firelab.org)",
+      "WebFetch(domain:firelab.github.io)"
     ]
   }
 }

@@ -1,6 +1,7 @@
 import json
 import os
 import csv
+import re
 from datetime import datetime, timezone
 
 import numpy as np
@@ -9,12 +10,14 @@ from pyproj import Transformer
 DEFAULT_LAT = 35.56
 DEFAULT_LON = -83.75
 
-GRID_METADATA = "/data/grid/grid_metadata.json"
-FUELS_ASC = "/data/grid/fuels.asc"
-IGNITIONS_CSV = "/data/grid/Ignitions.csv"
+GRID_METADATA     = "/data/grid/grid_metadata.json"
+FUELS_ASC         = "/data/grid/fuels.asc"
+FBFM40_TIF        = "/data/grid/fbfm40.tif"
+IGNITIONS_CSV     = "/data/grid/Ignitions.csv"
 IGNITION_METADATA = "/data/grid/ignition_metadata.json"
+ELMFIRE_DATA      = "/data/grid/elmfire.data"
 
-NON_BURNABLE_CODES = {91, 92, 93, 98, 99}
+NON_BURNABLE_CODES = {91, 92, 93, 98, 99, -9999}
 
 
 def load_grid_metadata():
@@ -23,11 +26,15 @@ def load_grid_metadata():
 
 
 def load_fuels(meta):
+    import rasterio
     nrows = meta["nrows"]
     ncols = meta["ncols"]
+    # Prefer GeoTIFF (ELMFIRE pipeline); fall back to ASC (C2FSB pipeline)
+    if os.path.exists(FBFM40_TIF):
+        with rasterio.open(FBFM40_TIF) as src:
+            return src.read(1).astype(np.int32)
     fuels = np.zeros((nrows, ncols), dtype=np.int32)
     with open(FUELS_ASC) as f:
-        # Skip 6-line header
         for _ in range(6):
             f.readline()
         for r in range(nrows):
@@ -78,6 +85,15 @@ def find_burnable_cell(row, col, fuels, meta):
     raise ValueError("No burnable cell found near ignition point")
 
 
+def patch_elmfire_data(x_5070, y_5070):
+    """Update X_IGN/Y_IGN in elmfire.data with the resolved burnable-cell coordinates."""
+    text = open(ELMFIRE_DATA).read()
+    text = re.sub(r"X_IGN\(1\)\s*=\s*[\d\.\-]+", f"X_IGN(1)                       = {x_5070:.2f}", text)
+    text = re.sub(r"Y_IGN\(1\)\s*=\s*[\d\.\-]+", f"Y_IGN(1)                       = {y_5070:.2f}", text)
+    open(ELMFIRE_DATA, "w").write(text)
+    print(f"  Patched elmfire.data: X_IGN={x_5070:.2f}, Y_IGN={y_5070:.2f}")
+
+
 def main():
     lat = float(os.environ.get("IGNITION_LAT", DEFAULT_LAT))
     lon = float(os.environ.get("IGNITION_LON", DEFAULT_LON))
@@ -94,6 +110,15 @@ def main():
     row, col, x_5070, y_5070 = latlon_to_grid_cell(lat, lon, meta)
     print(f"Projected to EPSG:5070: x={x_5070:.2f}, y={y_5070:.2f}")
     print(f"Initial grid cell: row={row}, col={col}")
+
+    nrows, ncols = meta["nrows"], meta["ncols"]
+    if not (0 <= row < nrows and 0 <= col < ncols):
+        print(f"  WARNING: Ignition ({lat}, {lon}) is outside grid bounds — falling back to grid center")
+        row, col = nrows // 2, ncols // 2
+        # Recompute x_5070/y_5070 from the clamped cell
+        xll, yll, cellsize = meta["xllcorner"], meta["yllcorner"], meta["cellsize"]
+        x_5070 = xll + (col + 0.5) * cellsize
+        y_5070 = yll + (nrows - row - 0.5) * cellsize
 
     row, col, fuel_code = find_burnable_cell(row, col, fuels, meta)
 
@@ -126,6 +151,11 @@ def main():
 
     print(f"Wrote {IGNITIONS_CSV}")
     print(f"Wrote {IGNITION_METADATA}")
+
+    # Patch elmfire.data with the resolved burnable-cell coordinates
+    if os.path.exists(ELMFIRE_DATA):
+        patch_elmfire_data(x_5070, y_5070)
+
     print(f"\nSummary: ignition at ({lat:.4f}, {lon:.4f}) → cell {cell_id} (row={row}, col={col}), fuel={fuel_code}")
 
 
